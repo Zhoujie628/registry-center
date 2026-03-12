@@ -33,8 +33,8 @@ class LLMConfig:
     llm_type: LLMType
     config_item: LLMConfigItem
 
-    def __init__(self, type: str, config_item: dict):
-        self.llm_type = convert_llm_type(type)
+    def __init__(self, llm_type: str, config_item: dict):
+        self.llm_type = convert_llm_type(llm_type)
         self.config_item = LLMConfigItem(config_item)
 
 

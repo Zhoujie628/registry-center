@@ -5,10 +5,11 @@ import time
 from abc import abstractmethod, ABC
 from typing import Union, Tuple
 
-
 from common.llm.config.llm_config import LLMConfig
 
 logger = logging.getLogger(__name__)
+
+
 class BaseLLM(ABC):
     llm_config: LLMConfig
 

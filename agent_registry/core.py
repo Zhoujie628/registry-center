@@ -21,7 +21,7 @@ class RegistryCore:
     def __init__(self, llm_type: LLMType = DEFAULT_LLM_TYPE, persistence_file: str = PERSISTENCE_FILE):
         self.llm = get_or_create_llm_instance(get_llm_config_by_type(llm_type))
         self.persistence_file = persistence_file
-        # Internal storage: key = (name, organization) tuple, value = AgentCard
+        # Internal storage of Agents: key is (name, organization) Tuple, value is AgentCard
         self._agents: Dict[Tuple[str, str], AgentCard] = {}
         self._load()  # load from file on startup
 
@@ -103,7 +103,7 @@ class RegistryCore:
             new_agent = AgentCard(**updated_data)
         except Exception as e:
             logger.error(f"Invalid agent data for update: {e}")
-            raise ValueError(f"Invalid agent data: {e}")
+            raise ValueError(f"Invalid agent data: {e}") from e
 
         # Replace in storage
         self._agents[key] = new_agent

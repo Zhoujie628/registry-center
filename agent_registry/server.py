@@ -27,10 +27,10 @@ async def register_agent(agent: AgentCard):
         success = registry.register(agent)
         return success
     except ValueError as e:
-        raise HTTPException(status_code=400, detail=str(e))
+        raise HTTPException(status_code=400, detail=str(e)) from e
     except Exception as e:
         logger.error(f"Unexpected error in register: {e}")
-        raise HTTPException(status_code=500, detail="Internal server error")
+        raise HTTPException(status_code=500, detail="Internal server error") from e
 
 
 @app.put("/rest/a2a-t/v1/update_agent/{name}", response_model=bool, summary="Full update (replace) an agent")
@@ -51,10 +51,10 @@ async def update_agent_full(
             raise HTTPException(status_code=404, detail="Agent not found")
         return success
     except ValueError as e:
-        raise HTTPException(status_code=400, detail=str(e))
+        raise HTTPException(status_code=400, detail=str(e)) from e
     except Exception as e:
         logger.error(f"Unexpected error in full update: {e}")
-        raise HTTPException(status_code=500, detail="Internal server error")
+        raise HTTPException(status_code=500, detail="Internal server error") from e
 
 
 @app.delete("/rest/a2a-t/v1/deregister_agent/{name}", response_model=bool, summary="Deregister an agent")
@@ -73,7 +73,7 @@ async def deregister_agent(
         return success
     except Exception as e:
         logger.error(f"Unexpected error in deregister: {e}")
-        raise HTTPException(status_code=500, detail="Internal server error")
+        raise HTTPException(status_code=500, detail="Internal server error") from e
 
 
 @app.get("/rest/a2a-t/v1/agents/search", response_model=List[AgentCard], summary="Fuzzy search by task")
@@ -88,7 +88,7 @@ async def search_agents_by_task(
         return agents
     except Exception as e:
         logger.error(f"Error in fuzzy search: {e}")
-        raise HTTPException(status_code=500, detail="Internal server error")
+        raise HTTPException(status_code=500, detail="Internal server error") from e
 
 
 @app.get("/rest/a2a-t/v1/health", summary="Health check")
