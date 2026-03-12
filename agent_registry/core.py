@@ -122,35 +122,6 @@ class RegistryCore:
         logger.info(f"Deregistered agent: {name} (org={organization})")
         return True
 
-    def get(self, name: str, organization: str) -> Optional[AgentCard]:
-        """Retrieve a single agent by exact name and organization."""
-        key = self._make_key(name, organization)
-        return self._agents.get(key)
-
-    def list_all(self) -> List[AgentCard]:
-        """Return a list of all registered agents."""
-        return list(self._agents.values())
-
-    def find_exact(self, name: Optional[str] = None, organization: Optional[str] = None,
-                   provider: Optional[str] = None) -> List[AgentCard]:
-        """
-        Exact search based on name, organization, and provider (which is provider.organization).
-        All parameters are optional; if multiple are given, they are combined with AND.
-        """
-        result = []
-        for agent in self._agents.values():
-            # Check name exact match
-            if name is not None and agent.name != name:
-                continue
-            # Check organization exact match
-            if organization is not None and agent.provider.organization != organization:
-                continue
-            # Check provider (organization) exact match (same as organization field)
-            if provider is not None and agent.provider.organization != provider:
-                continue
-            result.append(agent)
-        return result
-
     def find_by_task(self, task: str) -> List[AgentCard]:
         """
         Fuzzy search using LLM to match task description with agent capabilities.
