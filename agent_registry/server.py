@@ -52,6 +52,9 @@ async def update_agent_full(
         return success
     except ValueError as e:
         raise HTTPException(status_code=400, detail=str(e)) from e
+    except HTTPException as e:
+        # 捕获已经定义的 HTTPException，避免被 except Exception 捕获
+        raise e
     except Exception as e:
         logger.error(f"Unexpected error in full update: {e}")
         raise HTTPException(status_code=500, detail="Internal server error") from e
