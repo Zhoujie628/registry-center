@@ -11,6 +11,7 @@ from starlette.responses import Response
 
 from agent_registry.config import DEFAULT_LLM_TYPE, PERSISTENCE_FILE
 from agent_registry.core import RegistryCore
+from agent_registry.model.validated_agentcard import ValidatedAgentCard
 
 _REQUEST_BODY_SIZE_LIMIT = 1024 * 1024  # 10MB default limit
 _QUERY_URL_LENGTH_LIMIT = 1024  # 1KB default limit
@@ -58,7 +59,7 @@ async def limit_url_length(request: Request, call_next):
 
 @app.post("/rest/a2a-t/v1/agent-register", response_model=bool, summary="Register a new agent")
 @limiter.limit(_REQUEST_RATE_LIMIT)
-async def register_agent(request: Request, agent: AgentCard):
+async def register_agent(request: Request, agent: ValidatedAgentCard):
     """
     Register a new agent. The combination (name, provider.organization) must be unique.
     Returns True if registered, False if duplicate.
@@ -79,7 +80,7 @@ async def update_agent_full(
         request: Request,
         name: str = Path(..., description="Agent name"),
         organization: str = Query(..., description="Agent organization"),
-        agent_data: AgentCard = Body(..., description="Full agent data")
+        agent_data: ValidatedAgentCard = Body(..., description="Full agent data")
 ):
     """
     Fully replace an existing agent. The name and organization in the body must match the path/query.
