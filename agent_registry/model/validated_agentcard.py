@@ -13,6 +13,7 @@ class ValidatedAgentCard(AgentCard):
     provider: AgentProvider
 
     @field_validator('name')
+    @classmethod
     def validate_name(cls, v: str) -> str:
         """验证名称仅包含字母、数字和下划线"""
         if not _NAME_PATTERN.fullmatch(v):
@@ -25,6 +26,6 @@ class ValidatedAgentCard(AgentCard):
             try:
                 # 如果 url 不符合标准，HttpUrl 会抛出 ValidationError
                 HttpUrl(self.provider.url)
-            except Exception:
-                raise ValueError('Provider URL must be a valid web URL.')
+            except Exception as e:
+                raise ValueError('Provider URL must be a valid web URL.') from e
         return self
