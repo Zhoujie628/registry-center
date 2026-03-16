@@ -148,7 +148,7 @@ class RegistryCore:
 
         except json.JSONDecodeError as e:
             logger.error(f"JSON decode error in agent selection: {e}")
-            raise ValueError("LLM returned invalid JSON for agent selection")
+            raise ValueError("LLM returned invalid JSON for agent selection") from e
         except Exception as e:
             logger.error(f"LLM error during agent selection: {e}")
             raise ValueError("LLM error during agent selection") from e
