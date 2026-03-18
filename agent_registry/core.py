@@ -1,14 +1,12 @@
 # agent_registry/core.py
 import asyncio
-import json
-from typing import List, Dict, Any, Tuple
+from typing import List, Dict, Tuple, Optional
 
 from a2a.types import AgentCard
 from loguru import logger
 
 from agent_registry.config import PERSISTENCE_FILE, DEFAULT_LLM_TYPE, MAX_REGISTER_NUM
 from agent_registry.persistence import save_to_file, load_from_file
-from agent_registry.prompts import build_agent_selection_prompt  # assumed to exist
 from common.llm.config.llm_config import LLMType, get_llm_config_by_type
 from common.llm.provider.llm_provider_registry import get_or_create_llm_instance
 
@@ -70,99 +68,18 @@ class RegistryCore:
             logger.info(f"Registered agent: {agent.name} (org={agent.provider.organization})")
             return True
 
-    async def update(self, name: str, organization: str, updates: Dict[str, Any], partial: bool = True) -> bool:
+    def find_exact(self, name: Optional[str] = None, organization: Optional[str] = None) -> List[AgentCard]:
         """
-        Update an existing agent. The primary key (name, organization) cannot be changed.
-        If partial=True, only provided fields are updated (PATCH). If partial=False,
-        the entire agent is replaced (PUT), but name/organization must match the key.
-        Returns True if successful, False if agent not found.
+        Exact search based on name, organization, and provider (which is provider.organization).
+        All parameters are optional; if multiple are given, they are combined with AND.
         """
-        key = self._make_key(name, organization)
-        existing = self._agents.get(key)
-        if not existing:
-            logger.error(f"Update failed: agent not found ({name}, {organization})")
-            return False
-
-        if partial:
-            # Partial update: merge updates into existing dict
-            updated_data = existing.model_dump()
-            updated_data.update(updates)
-            # Ensure primary key fields are not changed
-            updated_data["name"] = name
-            updated_data["provider"]["organization"] = organization
-        else:
-            # Full replacement: updates should contain a full AgentCard representation
-            updated_data = updates
-            # Validate that the name/organization in updates match the key
-            if updated_data.get("name") != name or updated_data.get("provider", {}).get("organization") != organization:
-                raise ValueError("Cannot change primary key (name or organization) during full update")
-
-        try:
-            new_agent = AgentCard(**updated_data)
-        except Exception as e:
-            logger.error(f"Invalid agent data for update: {e}")
-            raise ValueError(f"Invalid agent data: {e}") from e
-
-        async with asyncio.Lock():
-            # Replace in storage
-            self._agents[key] = new_agent
-            self._save()
-            logger.info(f"Updated agent: {name} (org={organization})")
-            return True
-
-    async def deregister(self, name: str, organization: str) -> bool:
-        """Remove an agent. Returns True if deleted, False if not found."""
-        async with asyncio.Lock():
-            key = self._make_key(name, organization)
-            if key not in self._agents:
-                logger.info(f"Deregister failed: agent not found ({name}, {organization})")
-                return False
-            del self._agents[key]
-            self._save()
-            logger.info(f"Deregistered agent: {name} (org={organization})")
-            return True
-
-    async def find_by_task(self, task: str) -> List[AgentCard]:
-        """
-        Fuzzy search using LLM to match task description with agent capabilities.
-        Returns a list of candidate agents (could be empty).
-        """
-        if not task or not self._agents:
-            return []
-
-        # Prepare a summary of each agent for the LLM
-        agents_info = []
+        result = []
         for agent in self._agents.values():
-            agents_info.append({
-                "name": agent.name,
-                "description": agent.description,
-                "skills": [s.name for s in agent.skills] if agent.skills else []
-            })
-
-        try:
-            prompt = build_agent_selection_prompt(task, json.dumps(agents_info, ensure_ascii=False, indent=2))
-            # Assume LLM returns a list of agent names (string)
-            _, selected_names_str = self.llm.ask_llm(prompt)
-            # Parse selected_names_str as list of names (JSON format)
-            selected_names = json.loads(selected_names_str) if selected_names_str else []
-
-        except json.JSONDecodeError as e:
-            logger.error(f"JSON decode error in agent selection: {e}")
-            raise ValueError("LLM returned invalid JSON for agent selection") from e
-        except Exception as e:
-            logger.error(f"LLM error during agent selection: {e}")
-            raise ValueError("LLM error during agent selection") from e
-
-        # Filter agents whose names are in the selected list
-        # Note: This assumes names are unique across organizations; if not, we need a better key.
-        # For simplicity, we use name only, but a more robust approach would include organization.
-        # We'll match by name, but if multiple same names exist, all will be returned.
-        result = [agent for agent in self._agents.values() if agent.name in selected_names]
-        logger.info(f"LLM selected {len(result)} agents for task: {task}")
+            # Check name exact match
+            if name is not None and agent.name != name:
+                continue
+            # Check organization exact match
+            if organization is not None and agent.provider.organization != organization:
+                continue
+            result.append(agent)
         return result
-
-    async def clear_all(self) -> None:
-        """Remove all agents (use with caution)."""
-        self._agents.clear()
-        self._save()
-        logger.info("Cleared all agents.")
