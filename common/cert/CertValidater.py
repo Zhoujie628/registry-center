@@ -1,31 +1,172 @@
 import datetime
+import os
 from pathlib import Path
 
 from cryptography import x509
 from cryptography.hazmat.primitives.asymmetric import rsa, ec
 
 from common.cert import CertParser
-from common.cert.CertException import ValidationResult, CertParseException
 from common.cert.X509Obj import X509Obj
+from common.util.ConfObj import ConfObj
+from common.util.ConfUtil import load_cert_password
+from common.util.Constant import CONFIG_FILE_PATH
+from common.util.ValidationResult import ValidationResult
+
+
+class PathValidator:
+    def __init__(self, cert_path: str, suffix:str, is_required=True, conf_tip=""):
+        self.cert_path = cert_path
+        self.suffix = suffix.lower()
+        self.is_required = is_required
+        new_conf_tip = f'"{conf_tip}"' if conf_tip is not None and conf_tip != "" else ""
+        self.conf_tip = f"Please check {new_conf_tip} config in \"etc/conf/server.conf\" file and try again."
+
+    def is_support_format(self, file_extension: str) -> bool:
+        if self.suffix == "":
+            # 没后缀的不校验
+            return True
+        return self.suffix == file_extension.lower()
+
+    def validate(self) -> ValidationResult:
+        if self.cert_path is None or self.cert_path == '':
+            return ValidationResult(False, f"Cert file path is empty! {self.conf_tip}")
+        cert_path_obj = Path(self.cert_path)
+        if self.is_required and not cert_path_obj.exists():
+            return ValidationResult(False, f"Cert file not exist：{self.cert_path}. {self.conf_tip}")
+        file_extension = cert_path_obj.suffix.lower()
+        if not self.is_support_format(file_extension):
+            return ValidationResult(False, f"Cert file extension is not support!  {self.conf_tip}")
+        return ValidationResult(True, "")
+
+class AbstractValidatorLink:
+    def __init__(self, conf_obj: ConfObj):
+        self.conf_obj = conf_obj
+        self.link = self.build_link()
+
+    def build_link(self):
+        pass
+
+    def validate(self) -> ValidationResult:
+        for link in self.link:
+            result = link.validate()
+            if not result.is_valid:
+                return result
+        return ValidationResult(True, "")
+
+
+class PathValidatorLink(AbstractValidatorLink):
+
+    def build_link(self):
+        conf_obj = self.conf_obj
+        return [
+            PathValidator(conf_obj.ssl_certfile, suffix=".cer", is_required=True, conf_tip="ssl_certfile"),
+            PathValidator(conf_obj.ssl_keyfile, suffix=".pem", is_required=True, conf_tip="ssl_keyfile"),
+            PathValidator(conf_obj.ssl_keyfile_password, suffix="", is_required=True, conf_tip="ssl_keyfile_password"),
+            PathValidator(conf_obj.ssl_ca_certs, suffix=".cer", is_required=True, conf_tip="ssl_ca_certs"),
+            PathValidator(conf_obj.ssl_crl_file, suffix=".crl", is_required=False, conf_tip="ssl_crl_file")
+        ]
+
+
+class CommonContentValidator:
+    def __init__(self, cert_path: str, conf_tip=""):
+        self.cert_path = cert_path
+        new_conf_tip = f'"{conf_tip}"' if conf_tip is not None and conf_tip != "" else ""
+        self.conf_tip = f"Please check {new_conf_tip} config in \"etc/conf/server.conf\" file and try again."
+
+    def validate_public_key_length(self, public_key) -> bool:
+        """验证密钥算法和长度"""
+        if isinstance(public_key, rsa.RSAPublicKey):
+            return public_key.key_size >= 3072
+        if isinstance(public_key, ec.EllipticCurvePublicKey):
+            # 256位及以上
+            return public_key.key_size >= 256
+        return False
+
+    def validate_private_key_length(self, private_key) -> bool:
+        """验证密钥算法和长度"""
+        if isinstance(private_key, rsa.RSAPrivateKey):
+            return private_key.key_size >= 3072
+        if isinstance(private_key, ec.EllipticCurvePrivateKey):
+            # 256位及以上
+            return private_key.key_size >= 256
+        return False
+
+    def validate_certificate_validity(self, x509_obj: X509Obj) -> bool:
+        """验证证书有效期"""
+        current_time = datetime.datetime.now(datetime.UTC)
+        for cert_obj in x509_obj.cert_list:
+            try:
+                valid_from = datetime.datetime.fromisoformat(cert_obj.valid_from.replace('Z', '+00:00'))
+                valid_to = datetime.datetime.fromisoformat(cert_obj.valid_to.replace('Z', '+00:00'))
+                if current_time < valid_from or current_time > valid_to:
+                    return False
+            except (ValueError, TypeError):
+                return False
+        # 每本证书的有效期都要校验对
+        return True
+
+    def validate(self) -> ValidationResult:
+        pass
+
+
+class CerContentValidator(CommonContentValidator):
+
+    def validate(self) -> ValidationResult:
+        # 读取cer证书
+        try:
+            x509_obj = CertParser.parse_cer_certificate(self.cert_path)
+            if len(x509_obj.cert_list) == 0:
+                return ValidationResult(False, f"No certificate found! {self.conf_tip}")
+            # 校验X.509v3格式，校验公钥算法及长度，校验有效期
+            for cert_obj in x509_obj.cert_list:
+                # 1. 证书格式校验：X.509v3
+                if cert_obj.version != x509.Version.v3:
+                    return ValidationResult(False, f"Certificate format is not X.509v3. {self.conf_tip}")
+                # 2. 密钥算法、长度校验，cer只校验公钥，因为没有私钥
+                if not self.validate_public_key_length(cert_obj.public_key):
+                    return ValidationResult(False, f"Certificate key algorithm or length does not meet requirements. {self.conf_tip}")
+
+            # 3. 有效期校验，单独跑一把，确保每本证书的有效期对比的currentTime是一个
+            if not self.validate_certificate_validity(x509_obj):
+                return ValidationResult(False, f"Certificate is not valid at current time. {self.conf_tip}")
+
+            return ValidationResult(True, f"CER certificate validation passed! {self.cert_path}")
+        except Exception as e:
+            return ValidationResult(False, f"{e} {self.conf_tip}")
+
+
+class PrivateKeyValidator(CommonContentValidator):
+    def __init__(self, cert_path: str, password:str = None, conf_tip=""):
+        super().__init__(cert_path=cert_path, conf_tip=conf_tip)
+        self.password = password
+
+    def validate(self) -> ValidationResult:
+        try:
+            # 读取cer证书，验证密码是否有效
+            private_key = CertParser.parse_pem_files(self.cert_path, self.password)
+            # 校验私钥算法及长度
+            if not self.validate_private_key_length(private_key):
+                return ValidationResult(False,
+                                        f"Certificate key algorithm or length does not meet requirements. {self.conf_tip}")
+            return ValidationResult(True, f"PEM privatekey validation passed! {self.cert_path}")
+        except Exception as e:
+            return ValidationResult(False, f"{e} {self.conf_tip}")
+
+
+class CerContentValidatorLink(AbstractValidatorLink):
+
+    def build_link(self):
+        conf_obj = self.conf_obj
+        return [
+            CerContentValidator(conf_obj.ssl_certfile, conf_tip="ssl_certfile"),
+            CerContentValidator(conf_obj.ssl_ca_certs, conf_tip="ssl_ca_certs")
+        ]
 
 
 class CertValidator:
-    cert_path = ''
-    password = None
-    is_trust_cert = False
 
-    def __init__(self, cert_path: str, password=None, is_trust_cert = False):
-        self.cert_path = cert_path
-        self.password = password
-        self.is_trust_cert = is_trust_cert
-
-    def is_support_format(self, file_extension: str) -> bool:
-        if self.is_trust_cert and file_extension == '.cer':
-            return True
-        if not self.is_trust_cert and file_extension == '.p12':
-            return True
-        return False
-
+    def __init__(self, conf_obj: ConfObj):
+        self.conf_obj = conf_obj
 
     def validate(self) -> ValidationResult:
         """
@@ -42,113 +183,21 @@ class CertValidator:
             - 密钥算法、长度
         :return: ValidationResult
         """
-        # 1. 基础校验，无需读取证书
-        if self.cert_path is None or self.cert_path == '':
-            return ValidationResult(False, f"Cert file path is empty! ")
-        cert_path_obj = Path(self.cert_path)
-        if not cert_path_obj.exists():
-            return ValidationResult(False, f"Cert file not exist：{self.cert_path}")
-        file_extension = cert_path_obj.suffix.lower()
-        if not self.is_support_format(file_extension):
-            return ValidationResult(False, f"Cert file extension is not support! ")
-        # 2. 读取证书，做通用校验
-        try:
-            x509_obj = CertParser.parse_cert(self.cert_path, self.password)
-        except CertParseException as e:
-            return ValidationResult(False, e.__str__())
+        # 1. 基础校验，校验路径是否存在，文件名格式是否符合要求
+        if not os.path.exists(CONFIG_FILE_PATH):
+            return ValidationResult(False,
+                                    "Config file not exists! Please config \"etc/conf/server.conf\" "
+                                    "file and try again.")
+        result = PathValidatorLink(self.conf_obj).validate()
+        if not result.is_valid:
+            return result
+        # 2. 读取证书，校验X.509v3格式，校验公钥算法及长度，校验有效期
+        result = CerContentValidatorLink(self.conf_obj).validate()
+        if not result.is_valid:
+            return result
 
-        # 3. 根据格式进行特定校验
-        file_extension = cert_path_obj.suffix.lower()
-        if file_extension == '.p12':
-            return self._validate_p12_cert(x509_obj)
-        return self._validate_cer_cert(x509_obj)
-    
-    def _validate_p12_cert(self, x509_obj: X509Obj) -> ValidationResult:
-        """验证p12格式证书"""
-        # 1. 证书格式校验：X.509v3
-        for cert_obj in x509_obj.cert_list:
-            cert_version = cert_obj.org_cert.version
-            if cert_version != x509.Version.v3:
-                return ValidationResult(False, f"Certificate format is not X.509v3")
-        
-        # 2. 证书密钥算法、密钥长度校验，p12需要校验公私钥
-        if not self._validate_public_key_length(x509_obj.public_key) and not self._validate_private_key_length(x509_obj.private_key):
-            return ValidationResult(False, "Certificate key algorithm or length does not meet requirements")
-        
-        # 3. 有效期校验
-        if not self._validate_certificate_validity(x509_obj):
-            return ValidationResult(False, "Certificate is not valid at current time")
-        
-        # 4. 检查私钥是否加密（P12文件中的私钥通常已经加密）
-        # 5. 私钥口令与私钥匹配性 - 如果解析时出现异常，则密码不匹配（前面已经捕获）
-        
-        # 6. 私钥与公钥的匹配性校验
-        if not self._validate_private_key_public_key_match(x509_obj):
-            return ValidationResult(False, "Private key does not match public key")
-        
-        return ValidationResult(True, "P12 certificate validation passed")
-    
-    def _validate_cer_cert(self, x509_obj: X509Obj) -> ValidationResult:
-        """验证cer格式证书"""
-        for cert_obj in x509_obj.cert_list:
-            # 1. 证书格式校验：X.509v3
-            if cert_obj.version != x509.Version.v3:
-                return ValidationResult(False, f"Certificate format is not X.509v3")
-            # 2. 密钥算法、长度校验，cer只校验公钥，因为没有私钥
-            if not self._validate_public_key_length(cert_obj.public_key):
-                return ValidationResult(False, "Certificate key algorithm or length does not meet requirements")
-        
-        # 3. 有效期校验，单独跑一把，确保每本证书的有效期对比的currentTime是一个
-        if not self._validate_certificate_validity(x509_obj):
-            return ValidationResult(False, "Certificate is not valid at current time")
+        # 3. 读取私钥，验证密码是否有效，校验私钥算法及长度
+        key_path = self.conf_obj.ssl_keyfile
+        password = load_cert_password(self.conf_obj.ssl_keyfile_password)
+        return PrivateKeyValidator(cert_path=key_path, password=password, conf_tip="ssl_keyfile").validate()
 
-        return ValidationResult(True, "CER certificate validation passed")
-
-    def _validate_public_key_length(self, public_key) -> bool:
-        """验证密钥算法和长度"""
-        if isinstance(public_key, rsa.RSAPublicKey):
-            return public_key.key_size >= 3072
-        if isinstance(public_key, ec.EllipticCurvePublicKey):
-            # 256位及以上
-            return public_key.key_size >= 256
-        return False
-
-    def _validate_private_key_length(self, private_key) -> bool:
-        """验证密钥算法和长度"""
-        if isinstance(private_key, rsa.RSAPrivateKey):
-            return private_key.key_size >= 3072
-        if isinstance(private_key, ec.EllipticCurvePrivateKey):
-            # 256位及以上
-            return private_key.key_size >= 256
-        return False
-
-    def _validate_certificate_validity(self, x509_obj: X509Obj) -> bool:
-        """验证证书有效期"""
-        current_time = datetime.datetime.now(datetime.UTC)
-        for cert_obj in x509_obj.cert_list:
-            try:
-                valid_from = datetime.datetime.fromisoformat(cert_obj.valid_from.replace('Z', '+00:00'))
-                valid_to = datetime.datetime.fromisoformat(cert_obj.valid_to.replace('Z', '+00:00'))
-                if current_time < valid_from or current_time > valid_to:
-                    return False
-            except (ValueError, TypeError):
-                return False
-        # 每本证书的有效期都要校验对
-        return True
-
-
-    def _validate_private_key_public_key_match(self, x509_obj: X509Obj) -> bool:
-        """验证私钥与公钥是否匹配"""
-        # 取出证书中的公钥
-        public_key = x509_obj.public_key
-        # 取出x509解析出来的私钥对象
-        private_key = x509_obj.private_key
-        if not x509_obj.private_key or not x509_obj.public_key:
-            return False
-        # 私钥只能是RSA或ECDSA格式
-        if not isinstance(private_key, rsa.RSAPrivateKey) and not isinstance(private_key, ec.EllipticCurvePrivateKey):
-            return False
-        # 利用私钥生成公钥
-        public_key_from_private = private_key.public_key()
-
-        return public_key == public_key_from_private
