@@ -17,6 +17,11 @@ else
     exit 1
 fi
 
+# get user information
+CURRENT_USER=$(whoami)
+CURRENT_UID=$(id -u)
+CURRENT_GID=$(id -g)
+
 # Check if running as root
 if [ "$EUID" -eq 0 ]; then
     echo "⚠️  ===== Security Warning ====="
@@ -37,6 +42,11 @@ if [ "$EUID" -eq 0 ]; then
     esac
 fi
 
+# Passing through environment variables to Python
+export APP_USER="$CURRENT_USER"
+export APP_UID="$CURRENT_UID"
+export APP_GID="$CURRENT_GID"
+
 # Change to target directory
 cd "$TARGET_DIR" || {
     echo "Error: Cannot enter directory $TARGET_DIR"
@@ -55,5 +65,7 @@ fi
 echo "Starting Python script: $PYTHON_SCRIPT"
 python "$PYTHON_SCRIPT"
 
+EXIT_CODE=$?
+echo "$EXIT_CODE"
 
 exit 0
