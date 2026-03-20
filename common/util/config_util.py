@@ -1,18 +1,20 @@
-# config_loader.py
-import os
+# config_util.py
 from typing import Dict, Any
+
+import os
 
 
 def get_root_path() -> str:
+    """
+    get the root path of the component
+    Returns:
+        the root path
+    """
     current_script_path = os.path.abspath(__file__)
-
-    # 向上查找，直到找到项目的根目录
-    project_root = current_script_path
-    while True:
-        project_root = os.path.dirname(project_root)
-        if os.path.exists(os.path.join(project_root, "requirements.txt")):
-            break
+    script_dir = os.path.dirname(current_script_path)
+    project_root = os.path.dirname(os.path.dirname(script_dir))
     return project_root
+
 
 def get_conf() -> Dict[str, Any]:
     """
@@ -49,6 +51,3 @@ def load_configs(conf_path, config):
                     config[key.lower()] = value
     else:
         print(f"Error: The configuration file {conf_path} does not exist.")
-
-if __name__ == '__main__':
-    print(get_conf())
