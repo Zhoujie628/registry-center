@@ -5,6 +5,7 @@ from cryptography.hazmat.primitives.asymmetric.types import PrivateKeyTypes
 from common.cert.CertException import CertParseException
 from common.cert.X509Obj import X509Obj, CertObj
 
+
 SM2_SIGN = '1.2.156.10197.1.501'
 
 
@@ -82,3 +83,24 @@ def _extract_certificate_info(cert: x509.Certificate) -> CertObj:
     }
     obj = CertObj.from_dict(info)
     return obj
+
+
+def parse_crl_list(cert_path: str) -> x509.CertificateRevocationList:
+    try:
+        with open(cert_path, 'rb') as f:
+            cert_data = f.read()
+
+        if b"-----BEGIN " not in cert_data:
+            # der二进制模式，不支持读取der格式的crl
+            raise CertParseException(f'Parse crl file error! "-----BEGIN" not found! Unsupported der binary type! ')
+        # 尝试解析PEM格式的CRL
+        crl_list = x509.load_pem_x509_crl(cert_data)
+        if len(crl_list) == 0:
+            raise CertParseException(f"Parse crl file error! No crl found! ")
+        return crl_list
+    except Exception as e:
+        exception = e
+        if not isinstance(e, CertParseException):
+            # 过滤原始解析异常信息，防止敏感信息泄漏
+            exception = CertParseException("Parse crl file error! ")
+        raise exception

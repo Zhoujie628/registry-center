@@ -29,6 +29,7 @@ class ConfObj:
     ssl_ca_certs = DEFAULT_SSL_CA_CERTS
     ssl_crl_file = DEFAULT_SSL_CRLFILE
     verify_client = DEFAULT_VERIFY_CLIENT
+    crl_list_data = None
 
     @classmethod
     def as_object(cls, in_dict:dict):
@@ -45,11 +46,19 @@ class ConfObj:
         obj.ssl_keyfile = as_absolute_path(in_dict.get("ssl_keyfile", DEFAULT_SSL_KEYFILE))
         obj.ssl_keyfile_password = as_absolute_path(in_dict.get("ssl_keyfile_password", DEFAULT_KEY_PASSWORD))
         obj.ssl_ca_certs = as_absolute_path(in_dict.get("ssl_ca_certs", DEFAULT_SSL_CA_CERTS))
-        obj.ssl_crl_file = as_absolute_path(in_dict.get("ssl_crl_file", DEFAULT_SSL_CRLFILE))
+        # crl是非必填
+        crl_path = in_dict.get("ssl_crl_file", "")
+        obj.ssl_crl_file = as_absolute_path(crl_path) if len(crl_path) > 0 else crl_path
 
         # 大部分场景都是校验
         not_verified = in_dict.get("verify_client", "").lower() == "false"
         obj.verify_client = ssl.CERT_NONE if not_verified else ssl.CERT_REQUIRED
         return obj
 
-
+    def get_crl_list(self):
+        if self.crl_list_data is None:
+            return []
+        crl_list = []
+        for one_crl in self.crl_list_data:
+            crl_list.append(hex(one_crl.serial_number))
+        return crl_list

@@ -1,4 +1,6 @@
 # agent_registry/start.py
+import os
+import ssl
 import sys
 
 import uvicorn
@@ -7,6 +9,36 @@ from agent_registry.server import app
 from common.cert.CertValidater import CertValidator
 from common.util.ConfUtil import conf_singleton_obj, load_cert_password
 from common.util.config_util import get_conf
+
+from uvicorn import config
+
+def my_create_ssl_context(
+        certfile: str | os.PathLike[str],
+        keyfile: str | os.PathLike[str] | None,
+        password: str | None,
+        ssl_version: int,
+        cert_reqs: int,
+        ca_certs: str | os.PathLike[str] | None,
+        ciphers: str | None,
+) -> ssl.SSLContext:
+    ctx = ssl.SSLContext(ssl_version)
+    get_password = (lambda: password) if password else None
+    ctx.load_cert_chain(certfile, keyfile, get_password)
+    ctx.verify_mode = ssl.VerifyMode(cert_reqs)
+    if ca_certs:
+        ctx.load_verify_locations(ca_certs)
+        if len(conf_singleton_obj.get_crl_list()) > 0:
+            # 如果有CRL的场景，追加CRL
+            ctx.load_verify_locations(conf_singleton_obj.ssl_crl_file)
+            # 配置为校验CRL模式
+            ctx.verify_flags |= ssl.VERIFY_CRL_CHECK_LEAF
+    if ciphers:
+        ctx.set_ciphers(ciphers)
+
+    return ctx
+
+# 由于原版config不支持加载crl，因此扩展crl支持
+config.create_ssl_context = my_create_ssl_context
 
 
 class CustomUvicornServer:
@@ -40,7 +72,6 @@ class CustomUvicornServer:
 
 def main():
     # 校验配置
-    conf_obj = {}
     conf_obj = conf_singleton_obj
     result = CertValidator(conf_obj).validate()
     if not result.is_valid:

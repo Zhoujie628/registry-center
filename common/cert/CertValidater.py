@@ -29,9 +29,12 @@ class PathValidator:
 
     def validate(self) -> ValidationResult:
         if self.cert_path is None or self.cert_path == '':
+            if not self.is_required:
+                return ValidationResult(True, "Not config! ")
             return ValidationResult(False, f"Cert file path is empty! {self.conf_tip}")
+        # 到这里就是填了，填了就校验
         cert_path_obj = Path(self.cert_path)
-        if self.is_required and not cert_path_obj.exists():
+        if not cert_path_obj.exists():
             return ValidationResult(False, f"Cert file not exist：{self.cert_path}. {self.conf_tip}")
         file_extension = cert_path_obj.suffix.lower()
         if not self.is_support_format(file_extension):
@@ -153,6 +156,38 @@ class PrivateKeyValidator(CommonContentValidator):
             return ValidationResult(False, f"{e} {self.conf_tip}")
 
 
+class CRLValidator(CommonContentValidator):
+    crl_list_data = None
+
+    def validate_crl_validity(self, crl_list: x509.CertificateRevocationList) -> bool:
+        """验证CRL有效期"""
+        current_time = datetime.datetime.now(datetime.UTC)
+        return crl_list.last_update_utc <= current_time <= crl_list.next_update_utc
+
+    def validate(self) -> ValidationResult:
+        try:
+            if self.cert_path is None or self.cert_path == '':
+                # 非必填，没填就不校验
+                return ValidationResult(True, "CRL not config! ")
+            # 到这里就是填了，填了就校验
+            cert_path_obj = Path(self.cert_path)
+            if not cert_path_obj.exists():
+                return ValidationResult(False, f"CRL file not exist：{self.cert_path}. {self.conf_tip}")
+            # 读取CRL
+            crl_list = CertParser.parse_crl_list(self.cert_path)
+            self.crl_list_data = crl_list
+            # 1. 校验CRL格式：X.509v2，有扩展的是v2，没有扩展的是v1
+            is_v2 = len(crl_list.extensions) > 0
+            if not is_v2:
+                return ValidationResult(False, f"CRL format is not X.509v2. {self.conf_tip}")
+            # 2. 校验有效期：当前时间有效
+            if not self.validate_crl_validity(crl_list):
+                return ValidationResult(False, f"CRL is not valid at current time. {self.conf_tip}")
+            return ValidationResult(True, f"CRL validation passed! {self.cert_path}")
+        except Exception as e:
+            return ValidationResult(False, f"{e} {self.conf_tip}")
+
+
 class CerContentValidatorLink(AbstractValidatorLink):
 
     def build_link(self):
@@ -170,17 +205,20 @@ class CertValidator:
 
     def validate(self) -> ValidationResult:
         """
-        p12校验以下内容：
-            - 证书格式：X.509v3，不满足则退出进程启动
-            - 证书密钥算法、密钥长度：RSA(≥3072 bits)，ECDSA(≥256 bits)，不满足则退出进程启动
+        pem私钥校验以下内容：
+            - 证书私钥密钥算法、密钥长度：RSA(≥3072 bits)，ECDSA(≥256 bits)，不满足则退出进程启动
             - 有效期：当前时间有效，不满足则退出进程启动
             - 是否加密私钥：是否有口令、口令复杂度，不满足则给出日志打印
             - 私钥口令与私钥匹配性：不满足则退出进程启动
             - 私钥与公钥的匹配性：不满足则退出进程启动
         cer校验以下内容:
             - 校验证书格式：X.509v3
+            - 证书公钥算法、密钥长度：RSA(≥3072 bits)，ECDSA(≥256 bits)，不满足则退出进程启动
             - 校验有效期：当前时间有效
             - 密钥算法、长度
+        crl校验以下内容:
+            - 校验证书格式：X.509v2
+            - 校验有效期：当前时间有效
         :return: ValidationResult
         """
         # 1. 基础校验，校验路径是否存在，文件名格式是否符合要求
@@ -199,5 +237,13 @@ class CertValidator:
         # 3. 读取私钥，验证密码是否有效，校验私钥算法及长度
         key_path = self.conf_obj.ssl_keyfile
         password = load_cert_password(self.conf_obj.ssl_keyfile_password)
-        return PrivateKeyValidator(cert_path=key_path, password=password, conf_tip="ssl_keyfile").validate()
-
+        result = PrivateKeyValidator(cert_path=key_path, password=password, conf_tip="ssl_keyfile").validate()
+        if not result.is_valid:
+            return result
+        # 4. 读取crl，验证crl格式和有效期
+        crl_validator = CRLValidator(cert_path=self.conf_obj.ssl_crl_file, conf_tip="ssl_crl_file")
+        result = crl_validator.validate()
+        if result.is_valid:
+            # 校验通过后把单例的吊销列表缓存起来
+            self.conf_obj.crl_list_data = crl_validator.crl_list_data
+        return result
