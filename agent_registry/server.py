@@ -41,7 +41,8 @@ def parse_rate_limit(interface_name: str):
     Parse a rate limit string like "10/minute" into a RateLimitItem.
     Returns None if parsing fails.
     """
-    rate_string = f"{int(config.get('flowcontrol.ratelimit.register', 1))}/second" if interface_name == "register" else f"{int(config.get('flowcontrol.ratelimit.query', 10))}/second"
+    rate_string = f"{int(config.get('flowcontrol.ratelimit.register', 1))}/second" if interface_name == "register" \
+        else f"{int(config.get('flowcontrol.ratelimit.query', 10))}/second"
     items = parse_many(rate_string)
     return items[0] if items else None
 
@@ -204,7 +205,6 @@ async def list_agents_exact(
     Search agents by exact fields (AND combination).
     All parameters are optional. If none provided, returns all agents.
     """
-    # time.sleep(1)
     try:
         agents = registry.find_exact(name=name, organization=organization)
         return agents
