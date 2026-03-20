@@ -124,17 +124,19 @@ async def security_middleware(request: Request, call_next):
     """
     # Body size check for write methods
     if request.method in ("POST", "PUT"):
-        content_length = request.headers.get("content-length")
-        if content_length:
-            try:
-                if int(content_length) > MAX_REQUEST_BODY_SIZE:
-                    return Response(
-                        content="Payload Too Large",
-                        status_code=status.HTTP_413_CONTENT_TOO_LARGE,
-                    )
-            except ValueError:
-                # If content-length header is malformed, let FastAPI handle it.
-                pass
+        try:
+            body = await request.body()
+            if len(body) > MAX_REQUEST_BODY_SIZE:
+                return Response(
+                    content="Payload Too Large",
+                    status_code=status.HTTP_413_CONTENT_TOO_LARGE,
+                )
+            request._body = body
+        except Exception:
+            return Response(
+                content="Bad Request",
+                status_code=status.HTTP_400_BAD_REQUEST,
+            )
 
     # URL length check (full URL including scheme and host)
     # Using str(request.url) gives the complete URL string.
