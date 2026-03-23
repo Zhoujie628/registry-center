@@ -2,8 +2,8 @@ from cryptography import x509
 from cryptography.hazmat.primitives import serialization
 from cryptography.hazmat.primitives.asymmetric.types import PrivateKeyTypes
 
-from common.cert.CertException import CertParseException
-from common.cert.X509Obj import X509Obj, CertObj
+from common.cert.cert_exception import CertParseException
+from common.cert.x509_obj import X509Obj, CertObj
 
 
 SM2_SIGN = '1.2.156.10197.1.501'

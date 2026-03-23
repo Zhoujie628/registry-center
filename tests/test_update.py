@@ -1,8 +1,8 @@
 # tests/test_update.py
 import pytest
 from fastapi.testclient import TestClient
-from agent_registry.server import app
 from a2a.types import AgentCard
+from agent_registry.server import app
 
 
 @pytest.fixture

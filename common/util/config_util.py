@@ -2,6 +2,7 @@
 from typing import Dict, Any
 
 import os
+from loguru import logger
 
 
 def get_root_path() -> str:
@@ -50,4 +51,4 @@ def load_configs(conf_path, config):
 
                     config[key.lower()] = value
     else:
-        print(f"Error: The configuration file {conf_path} does not exist.")
+        logger.error(f"Error: The configuration file {conf_path} does not exist.")

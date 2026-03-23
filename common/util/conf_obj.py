@@ -1,7 +1,7 @@
 import os
 import ssl
 
-from common.util.Constant import ROOT_PATH
+from common.util.constant_param import ROOT_PATH
 
 DEFAULT_IP = "127.0.0.1"
 DEFAULT_PORT = 5000
@@ -20,6 +20,7 @@ def as_absolute_path(path):
     new_path = os.path.normpath(new_path)
     return new_path
 
+
 class ConfObj:
     ip = DEFAULT_IP
     port = DEFAULT_PORT
@@ -32,7 +33,7 @@ class ConfObj:
     crl_list_data = None
 
     @classmethod
-    def as_object(cls, in_dict:dict):
+    def as_object(cls, in_dict: dict):
         obj = cls()
 
         obj.ip = in_dict.get("ip", DEFAULT_IP)

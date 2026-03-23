@@ -1,9 +1,9 @@
 import json
 import os
+from pathlib import Path
 from typing import List, Dict, Any
 
 from loguru import logger
-from pathlib import Path
 
 from agent_registry.config import MAX_FILE_SIZE_BYTES
 

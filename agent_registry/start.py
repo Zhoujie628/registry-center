@@ -4,14 +4,15 @@ import ssl
 import sys
 
 import uvicorn
+from uvicorn import config
 
 from agent_registry.server import app
-from common.cert.CertValidater import CertValidator
+from common.cert.cert_validater import CertValidator
 from common.log.audit_logger import audit_logger, LogLevel, OperationResult, OperatorObject, OperationName
-from common.util.ConfUtil import conf_singleton_obj, load_cert_password
+from common.util.conf_util import conf_singleton_obj, load_cert_password
 from common.util.config_util import get_conf
 
-from uvicorn import config
+
 
 
 def get_user_info_from_env():
@@ -75,7 +76,7 @@ class CustomUvicornServer:
         self.conf_obj = conf_obj
 
     def run(self):
-        config = uvicorn.Config(
+        server_config = uvicorn.Config(
             app=app,
             host=self.server_config.get("ip", "127.0.0.1"),
             port=int(self.server_config.get("port", 5001)),
@@ -92,7 +93,7 @@ class CustomUvicornServer:
             timeout_graceful_shutdown=int(self.server_config.get("connection.timeout", 30)),
             log_level="info",
         )
-        server = uvicorn.Server(config)
+        server = uvicorn.Server(server_config)
         server.run()
 
 

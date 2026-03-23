@@ -22,27 +22,10 @@ class RegistryCore:
         self._agents: Dict[Tuple[str, str], AgentCard] = {}
         self._load()  # load from file on startup
 
-    # ---------- Private helpers ----------
-    def _make_key(self, name: str, organization: str) -> Tuple[str, str]:
+    @staticmethod
+    def _make_key(name: str, organization: str) -> Tuple[str, str]:
         """Create a normalized key for indexing."""
         return name.strip(), organization.strip()
-
-    def _save(self) -> None:
-        """Persist current agents to file."""
-        data = [agent.model_dump() for agent in self._agents.values()]
-        save_to_file(self.persistence_file, data)
-
-    def _load(self) -> None:
-        """Load agents from file and populate the dictionary."""
-        data_list = load_from_file(self.persistence_file)
-        for item in data_list:
-            try:
-                agent = AgentCard(**item)
-                key = self._make_key(agent.name, agent.provider.organization)
-                self._agents[key] = agent
-            except Exception as e:
-                logger.error(f"Failed to load agent from JSON: {e}, data: {item}")
-        logger.info(f"Loaded {len(self._agents)} agents from persistence.")
 
     # ---------- Public API ----------
     async def register(self, agent: AgentCard) -> bool:
@@ -75,3 +58,21 @@ class RegistryCore:
 
     def get_agents(self):
         return self._agents
+
+    # ---------- Private helpers ----------
+    def _save(self) -> None:
+        """Persist current agents to file."""
+        data = [agent.model_dump() for agent in self._agents.values()]
+        save_to_file(self.persistence_file, data)
+
+    def _load(self) -> None:
+        """Load agents from file and populate the dictionary."""
+        data_list = load_from_file(self.persistence_file)
+        for item in data_list:
+            try:
+                agent = AgentCard(**item)
+                key = self._make_key(agent.name, agent.provider.organization)
+                self._agents[key] = agent
+            except Exception as e:
+                logger.error(f"Failed to load agent from JSON: {e}, data: {item}")
+        logger.info(f"Loaded {len(self._agents)} agents from persistence.")
