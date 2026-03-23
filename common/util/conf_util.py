@@ -28,7 +28,7 @@ def load_cert_password(password_path: str) -> str:
     # read password file and decrypt content
     with open(password_path, 'r', encoding='utf-8') as f:
         str_content = f.read()
-        return CipherUtil.decrypt(str_content)
+        return cipher_util.decrypt(str_content)
 
 
 # 单例对象
