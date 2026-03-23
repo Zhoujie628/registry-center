@@ -9,7 +9,7 @@ and persistence using a JSON file.
 
 import asyncio
 from functools import partial, lru_cache
-from typing import List, Optional, Tuple
+from typing import List, Optional, Tuple, Any
 
 import anyio
 from a2a.types import AgentCard
@@ -279,7 +279,7 @@ async def _perform_registration(
 async def register_agent(
         agent: ValidatedAgentCard,
         request: Request = Depends(SizeValidator(max_size=500 * 1024)),
-        _: None = Depends(RateLimiter('register')),
+        _: Any = Depends(RateLimiter('register')),
         registry: RegistryCore = Depends(get_registry),
 ):
     """
@@ -315,7 +315,7 @@ async def register_agent(
 async def list_agents_exact(
         name: Optional[str] = Query(None, description="Exact agent name"),
         organization: Optional[str] = Query(None, description="Exact organization"),
-        registry: RegistryCore = Depends(get_registry), _: None = Depends(RateLimiter('query')),  #
+        registry: RegistryCore = Depends(get_registry), _: Any = Depends(RateLimiter('query')),  #
 ):
     """
     Search agents by exact fields (AND combination).
