@@ -14,8 +14,6 @@ from common.util.conf_util import conf_singleton_obj, load_cert_password, set_ss
 from common.util.config_util import get_conf
 
 
-
-
 def get_user_info_from_env():
     """从环境变量获取用户信息"""
     user_info = {
@@ -28,12 +26,14 @@ def get_user_info_from_env():
 
 def record_startup_log():
     server_config = get_conf()
-    audit_logger.audit(operation_name=OperationName.START_SERVICE,
-                       level=LogLevel.DANGER,
-                       result=OperationResult.SUCCESS,
-                       object_name=OperatorObject.SERVICE,
-                       details={"ip": server_config.get("ip", ""), "port": server_config.get("port", "")},
-                       user_name=get_user_info_from_env().get('username'))
+    audit_logger.audit({
+        "operation_name": OperationName.START_SERVICE,
+        "level": LogLevel.DANGER,
+        "result": OperationResult.FAILURE,
+        "object_name": OperatorObject.SERVICE,
+        "details": {"ip": server_config.get("ip", ""), "port": server_config.get("port", "")},
+        "user_name": get_user_info_from_env().get('username')
+    })
 
 
 app.add_event_handler("startup", record_startup_log)
@@ -112,12 +112,14 @@ def main():
         server = CustomUvicornServer(server_config, conf_obj)
         server.run()
     except Exception as e:
-        audit_logger.audit(operation_name=OperationName.START_SERVICE,
-                           level=LogLevel.DANGER,
-                           result=OperationResult.FAILURE,
-                           object_name=OperatorObject.SERVICE,
-                           details={"ip": server_config.get("ip", ""), "port": server_config.get("port", "")},
-                           user_name=get_user_info_from_env().get('username'))
+        audit_logger.audit({
+            "operation_name": OperationName.START_SERVICE,
+            "level": LogLevel.DANGER,
+            "result": OperationResult.FAILURE,
+            "object_name": OperatorObject.SERVICE,
+            "details": {"ip": server_config.get("ip", ""), "port": server_config.get("port", "")},
+            "user_name": get_user_info_from_env().get('username')
+        })
 
 
 if __name__ == "__main__":
