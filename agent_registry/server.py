@@ -302,7 +302,7 @@ async def register_agent(
         return await _perform_registration(agent, registry, client_ip, details)
 
     except anyio.WouldBlock:
-        raise HTTPException(status.HTTP_503_SERVICE_UNAVAILABLE, "Server is busy")
+        raise HTTPException(status.HTTP_503_SERVICE_UNAVAILABLE, "Server is busy") from anyio.WouldBlock
     finally:
         register_semaphore.release()
 
@@ -315,7 +315,7 @@ async def register_agent(
 async def list_agents_exact(
         name: Optional[str] = Query(None, description="Exact agent name"),
         organization: Optional[str] = Query(None, description="Exact organization"),
-        registry: RegistryCore = Depends(get_registry), _: Any = Depends(RateLimiter('query')),  #
+        registry: RegistryCore = Depends(get_registry), _: Any = Depends(RateLimiter('query')),
 ):
     """
     Search agents by exact fields (AND combination).
@@ -324,7 +324,7 @@ async def list_agents_exact(
     try:
         query_semaphore.acquire_nowait()
     except anyio.WouldBlock:
-        raise HTTPException(status.HTTP_503_SERVICE_UNAVAILABLE, "Server is busy")
+        raise HTTPException(status.HTTP_503_SERVICE_UNAVAILABLE, "Server is busy") from anyio.WouldBlock
     try:
         agents = registry.find_exact(name=name, organization=organization)
         return agents

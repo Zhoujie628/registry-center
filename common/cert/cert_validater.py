@@ -1,5 +1,6 @@
 import datetime
 import os
+from abc import ABC, abstractmethod
 from pathlib import Path
 
 from cryptography import x509
@@ -42,11 +43,12 @@ class PathValidator:
         return ValidationResult(True, "")
 
 
-class AbstractValidatorLink:
+class AbstractValidatorLink(ABC):
     def __init__(self, conf_obj: ConfObj):
         self.conf_obj = conf_obj
         self.link = self.build_link()
 
+    @abstractmethod
     def build_link(self):
         pass
 
@@ -132,7 +134,8 @@ class CerContentValidator(CommonContentValidator):
                 # 2. 密钥算法、长度校验，cer只校验公钥，因为没有私钥
                 if not self.validate_public_key_length(cert_obj.public_key):
                     return ValidationResult(False,
-                                            f"Certificate key algorithm or length does not meet requirements. {self.conf_tip}")
+                                            f"Certificate key algorithm or length does not meet requirements."
+                                            f"{self.conf_tip}")
 
             # 3. 有效期校验，单独跑一把，确保每本证书的有效期对比的currentTime是一个
             if not self.validate_certificate_validity(x509_obj):
@@ -155,7 +158,8 @@ class PrivateKeyValidator(CommonContentValidator):
             # 校验私钥算法及长度
             if not self.validate_private_key_length(private_key):
                 return ValidationResult(False,
-                                        f"Certificate key algorithm or length does not meet requirements. {self.conf_tip}")
+                                        f"Certificate key algorithm or length does not meet requirements. "
+                                        f"{self.conf_tip}")
             return ValidationResult(True, f"PEM privatekey validation passed! {self.cert_path}")
         except Exception as e:
             return ValidationResult(False, f"{e} {self.conf_tip}")
