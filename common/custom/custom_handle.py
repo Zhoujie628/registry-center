@@ -23,7 +23,7 @@ class BaseHandler(ABC):
 # ==================== 默认实现 ====================
 class DecryptHandler(BaseHandler):
     def handle(self, *args, **kwargs):
-        return decrypt
+        return decrypt(*args)
 
 
 class AuditHandler(BaseHandler):
