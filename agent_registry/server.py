@@ -24,7 +24,7 @@ from agent_registry.config import (
     MAX_URL_LENGTH,
 )
 from agent_registry.core import RegistryCore
-from agent_registry.get_registry import get_registry
+from agent_registry.registry_instance import get_registry
 from agent_registry.middleware import ConnectionLimitMiddleware, TimeoutMiddleware
 from agent_registry.model.validated_agentcard import ValidatedAgentCard
 from common.custom.custom_handle import HandlerRegistry

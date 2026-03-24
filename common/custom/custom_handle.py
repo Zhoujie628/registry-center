@@ -4,7 +4,7 @@ from typing import Dict, Type
 
 from a2a.types import AgentCard
 
-from agent_registry.get_registry import get_registry
+from agent_registry.registry_instance import get_registry
 from common.custom.interface_type import InterfaceType
 from common.log.audit_logger import audit_logger
 from common.util.authenticate_util import authenticate
