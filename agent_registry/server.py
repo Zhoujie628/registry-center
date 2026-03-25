@@ -132,6 +132,9 @@ app = FastAPI(
     title="Agent Registry Service",
     description="RESTful API for managing AI Agent cards with persistence and semantic search.",
     version="2.0.0",
+    docs_url=None,
+    redoc_url=None,
+    openapi_url=None
 )
 
 config = get_conf()
