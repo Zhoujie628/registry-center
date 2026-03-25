@@ -29,7 +29,8 @@ def load_cert_password(password_path: str) -> bytes:
         return b""
     # read password file and decrypt content
     with open(password_path, 'r', encoding='utf-8') as f:
-        str_content = f.read()
+        # 文件中可能有换行符
+        str_content = f.read().strip()
         return cipher_util.decrypt(str_content)
 
 

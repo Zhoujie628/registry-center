@@ -104,7 +104,7 @@ class CommonContentValidator:
     @staticmethod
     def validate_certificate_validity(x509_obj: X509Obj) -> bool:
         """验证证书有效期"""
-        current_time = datetime.datetime.now(datetime.UTC)
+        current_time = datetime.datetime.now(datetime.timezone.utc)
         for cert_obj in x509_obj.cert_list:
             try:
                 valid_from = datetime.datetime.fromisoformat(cert_obj.valid_from.replace('Z', '+00:00'))
@@ -218,7 +218,7 @@ class CRLValidator(CommonContentValidator):
 
     def validate_crl_validity(self, crl_list: x509.CertificateRevocationList) -> bool:
         """验证CRL有效期"""
-        current_time = datetime.datetime.now(datetime.UTC)
+        current_time = datetime.datetime.now(datetime.timezone.utc)
         return crl_list.last_update_utc <= current_time <= crl_list.next_update_utc
 
     def validate(self) -> ValidationResult:
