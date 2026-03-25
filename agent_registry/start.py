@@ -4,6 +4,7 @@ import ssl
 import sys
 
 import uvicorn
+from loguru import logger
 from uvicorn import config
 
 from agent_registry.server import app
@@ -51,22 +52,25 @@ def my_create_ssl_context(
         ca_certs: str | os.PathLike[str] | None,
         ciphers: str | None,
 ) -> ssl.SSLContext:
-    ctx = ssl.SSLContext(ssl_version)
-    get_password = (lambda: password) if password else None
-    ctx.load_cert_chain(certfile, keyfile, get_password)
-    ctx.verify_mode = ssl.VerifyMode(cert_reqs)
-    if ca_certs:
-        ctx.load_verify_locations(ca_certs)
-        if len(conf_singleton_obj.get_crl_list()) > 0:
-            # 如果有CRL的场景，追加CRL
-            ctx.load_verify_locations(conf_singleton_obj.ssl_crl_file)
-            # 配置为校验CRL模式
-            ctx.verify_flags |= ssl.VERIFY_CRL_CHECK_LEAF
-    if ciphers:
-        ctx.set_ciphers(ciphers)
+    try:
+        ctx = ssl.SSLContext(ssl_version)
+        get_password = (lambda: password) if password else None
+        ctx.load_cert_chain(certfile, keyfile, get_password)
+        ctx.verify_mode = ssl.VerifyMode(cert_reqs)
+        if ca_certs:
+            ctx.load_verify_locations(ca_certs)
+            if len(conf_singleton_obj.get_crl_list()) > 0:
+                # 如果有CRL的场景，追加CRL
+                ctx.load_verify_locations(conf_singleton_obj.ssl_crl_file)
+                # 配置为校验CRL模式
+                ctx.verify_flags |= ssl.VERIFY_CRL_CHECK_LEAF
+        if ciphers:
+            ctx.set_ciphers(ciphers)
 
-    return ctx
-
+        return ctx
+    except Exception as e:
+        logger.error(f"ssl_context set error: {e}")
+        sys.exit(f"ssl_context set error: {e}")
 
 # 由于原版config不支持加载crl，因此扩展crl支持
 config.create_ssl_context = my_create_ssl_context
@@ -83,7 +87,7 @@ class CustomUvicornServer:
         server_config = uvicorn.Config(
             app=app,
             host=self.server_config.get("ip", "127.0.0.1"),
-            port=int(self.server_config.get("port", 5001)),
+            port=int(self.server_config.get("port", 5000)),
             ssl_certfile=self.conf_obj.ssl_certfile,
             # 私钥路径
             ssl_keyfile=self.conf_obj.ssl_keyfile,
@@ -115,6 +119,7 @@ def main():
         server = CustomUvicornServer(server_config, conf_obj)
         server.run()
     except Exception as e:
+        logger.error(f"agent_registry server start failed {e}")
         audit_handle.handle({
             "object_name": OperatorObject.SERVICE,
             "operation_name": OperationName.START_SERVICE,

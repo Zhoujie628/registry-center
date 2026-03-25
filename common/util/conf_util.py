@@ -3,6 +3,8 @@ import os
 import platform
 import stat
 
+from loguru import logger
+
 from common.util import cipher_util
 from common.util.conf_obj import ConfObj
 from common.util.constant_param import CONFIG_FILE_PATH, SSL_PATH
@@ -16,6 +18,7 @@ def load_conf_as_dict(conf_file: str) -> dict:
             config.read_string('[DEFAULT]\n' + f.read())
             return dict(config['DEFAULT'])
     except Exception as e:
+        logger.error(f"load config failed, {e}")
         return {}
 
 
@@ -37,6 +40,7 @@ def load_cert_password(password_path: str) -> bytes:
 def set_ssl_folder_permissions():
     if platform.system().lower() != "linux":
         # Unsupported system type!
+        logger.error(f"Unsupported system type: {platform.system().lower()}")
         return
     # 设置目录权限为700
     os.chmod(SSL_PATH, stat.S_IRUSR | stat.S_IWUSR | stat.S_IXUSR)
@@ -46,6 +50,7 @@ def set_ssl_folder_permissions():
             file_path = os.path.join(root, file_name)
             # 设置文件权限600
             os.chmod(file_path, stat.S_IRUSR | stat.S_IWUSR)
+
 
 # 单例对象
 conf_singleton_obj = load_conf_obj(CONFIG_FILE_PATH)
