@@ -105,18 +105,32 @@ class ValidatedAgentCard(AgentCard):
 
     @model_validator(mode='after')
     def validate_provider(self):
-        url_validation = hasattr(self.provider, 'url') and self.provider.url
-        orgnization_validation = hasattr(self.provider, 'orgnization') and self.provider.orgnization and len(
-                self.provider.orgnization) > ORGNIZATION_MAX_LENGTH
-        if self.provider and url_validation:
-            if len(self.provider.url) > URL_MAX_LENGTH:
+        # 1. provider 必须存在
+        if not self.provider:
+            raise ValueError('Agent provider is required.')
+
+        # 2. organization 必须存在且非空
+        org = getattr(self.provider, 'organization', None)
+        if org is None or not org.strip():
+            raise ValueError('Agent provider organization is required and cannot be empty.')
+
+        # 3. 长度限制
+        if len(org) > ORGNIZATION_MAX_LENGTH:
+            raise ValueError(f'The agent organization can contain a maximum of {ORGNIZATION_MAX_LENGTH} characters.')
+
+        # 4. 禁止控制字符（防范日志注入）
+        if any(ord(c) < 32 for c in org):  # ASCII 控制字符（0-31）
+            raise ValueError('Agent provider organization contains invalid control characters.')
+
+        # 5. URL 校验
+        url = getattr(self.provider, 'url', None)
+        if url:
+            if len(url) > URL_MAX_LENGTH:
                 raise ValueError(f"The URL for the agent provider's website or relevant documentation can contain "
                                  f"a maximum of {URL_MAX_LENGTH} characters.")
             try:
-                # 如果 url 不符合标准，HttpUrl 会抛出 ValidationError
-                HttpUrl(self.provider.url)
+                HttpUrl(url)
             except Exception as e:
                 raise ValueError('Provider URL must be a valid web URL.') from e
-        if self.provider and orgnization_validation:
-            raise ValueError(f'The agent orgnization can contain a maximum of {ORGNIZATION_MAX_LENGTH} characters.')
+
         return self
