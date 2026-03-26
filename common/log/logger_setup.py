@@ -34,8 +34,7 @@ def add_module_logger(module_prefix: str):
         colorize=True,
     )
 
-    # 临时保存当前 umask
-    original_umask = os.umask(0o226)
+
 
     # Regular log file
     logger.add(
@@ -68,6 +67,3 @@ def add_module_logger(module_prefix: str):
     )
 
     logger.info("Logger initialized (file permissions set to 440)")
-
-    # 恢复原来的 umask
-    os.umask(original_umask)
