@@ -128,10 +128,8 @@ class ValidatedAgentCard(AgentCard):
         url = getattr(self.provider, 'url', None)
         if url:
             if len(url) > URL_MAX_LENGTH:
-                raise ValueError(
-                    f'The URL for the agent provider\'s website or relevant documentation '
-                    f'can contain a maximum of {URL_MAX_LENGTH} characters.'
-                )
+                raise ValueError(f"The URL for the agent provider's website or relevant documentation can contain "
+                                 f"a maximum of {URL_MAX_LENGTH} characters.")
             try:
                 HttpUrl(url)
             except Exception as e:
