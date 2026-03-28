@@ -47,7 +47,7 @@ async def record_startup_log():
 app.add_event_handler("startup", record_startup_log)
 
 
-def my_create_ssl_context(
+def customized_create_ssl_context(
         certfile: str | os.PathLike[str],
         keyfile: str | os.PathLike[str] | None,
         password: str | None,
@@ -56,29 +56,25 @@ def my_create_ssl_context(
         ca_certs: str | os.PathLike[str] | None,
         ciphers: str | None,
 ) -> ssl.SSLContext:
-    try:
-        ctx = ssl.SSLContext(ssl_version)
-        get_password = (lambda: password) if password else None
-        ctx.load_cert_chain(certfile, keyfile, get_password)
-        ctx.verify_mode = ssl.VerifyMode(cert_reqs)
-        if ca_certs:
-            ctx.load_verify_locations(ca_certs)
-            if len(conf_singleton_obj.get_crl_list()) > 0:
-                # 如果有CRL的场景，追加CRL
-                ctx.load_verify_locations(conf_singleton_obj.ssl_crl_file)
-                # 配置为校验CRL模式
-                ctx.verify_flags |= ssl.VERIFY_CRL_CHECK_LEAF
-        if ciphers:
-            ctx.set_ciphers(ciphers)
+    ctx = ssl.SSLContext(ssl_version)
+    get_password = (lambda: password) if password else None
+    ctx.load_cert_chain(certfile, keyfile, get_password)
+    ctx.verify_mode = ssl.VerifyMode(cert_reqs)
+    if ca_certs:
+        ctx.load_verify_locations(ca_certs)
+        if len(conf_singleton_obj.get_crl_list()) > 0:
+            # 如果有CRL的场景，追加CRL
+            ctx.load_verify_locations(conf_singleton_obj.ssl_crl_file)
+            # 配置为校验CRL模式
+            ctx.verify_flags |= ssl.VERIFY_CRL_CHECK_LEAF
+    if ciphers:
+        ctx.set_ciphers(ciphers)
 
-        return ctx
-    except Exception as e:
-        logger.error(f"ssl_context set error: {e}")
-        raise SystemExit(f"ssl_context set error: {e}")
+    return ctx
 
 
 # 由于原版config不支持加载crl，因此扩展crl支持
-config.create_ssl_context = my_create_ssl_context
+config.create_ssl_context = customized_create_ssl_context
 
 
 class CustomUvicornServer:
