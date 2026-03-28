@@ -162,13 +162,23 @@ async def security_middleware(request: Request, call_next):
     """
     # Body size check for write methods
     if request.method in ("POST", "PUT"):
+        total_size = 0
+        body_chunks = []  # Only store if we need to preserve the body
+
         try:
-            body = await request.body()
-            if len(body) > MAX_REQUEST_BODY_SIZE:
-                return Response(
-                    content="Payload Too Large",
-                    status_code=status.HTTP_413_CONTENT_TOO_LARGE,
-                )
+            # Stream body in chunks
+            async for chunk in request.stream():
+                total_size += len(chunk)
+
+                # Early exit if size exceeds limit
+                if total_size > MAX_REQUEST_BODY_SIZE:
+                    return Response(
+                        content="Payload Too Large",
+                        status_code=status.HTTP_413_CONTENT_TOO_LARGE,
+                    )
+
+                body_chunks.append(chunk)
+            request._body = b''.join(body_chunks)
         except Exception:
             return Response(
                 content="Bad Request",
