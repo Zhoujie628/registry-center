@@ -51,9 +51,6 @@ class AuditLogger:
         self.log_file = os.path.join(parent_path, "audit.log")
         self.lock = threading.Lock()
 
-        # 确保日志目录存在
-        os.makedirs(os.path.dirname(self.log_file), exist_ok=True)
-
     @staticmethod
     def _load_config() -> Dict[str, Any]:
         """加载配置文件，若不存在则创建默认配置"""
