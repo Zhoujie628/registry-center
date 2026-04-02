@@ -1,3 +1,4 @@
+import asyncio
 import configparser
 import os
 import platform
@@ -5,10 +6,13 @@ import stat
 
 from loguru import logger
 
+from common.custom.custom_handle import HandlerRegistry
+from common.custom.interface_type import InterfaceType
 from common.util import cipher_util
 from common.util.conf_obj import ConfObj
 from common.util.constant_param import CONFIG_FILE_PATH, SSL_PATH
 
+decrypt_handle = HandlerRegistry.get_handler(InterfaceType.DECRYPT)
 
 def load_conf_as_dict(conf_file: str) -> dict:
     config = configparser.ConfigParser()
@@ -34,7 +38,7 @@ def load_cert_password(password_path: str) -> bytes:
     with open(password_path, 'r', encoding='utf-8') as f:
         # 文件中可能有换行符
         str_content = f.read().strip()
-        return cipher_util.decrypt(str_content)
+        return asyncio.run(decrypt_handle.handle(str_content))
 
 
 def set_ssl_folder_permissions():
