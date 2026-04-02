@@ -3,7 +3,7 @@ import re
 from a2a.types import AgentCard, AgentProvider, AgentSkill, AgentCapabilities
 from pydantic import field_validator, model_validator, HttpUrl
 
-_NAME_PATTERN = re.compile(r'^[a-zA-Z0-9_]+(?:\s+[a-zA-Z0-9_]+)*$')
+_NAME_PATTERN = re.compile(r'^[A-Za-z0-9_]+$')
 
 NAME_MAX_LENGTH = 100
 ORGNIZATION_MAX_LENGTH = 100
