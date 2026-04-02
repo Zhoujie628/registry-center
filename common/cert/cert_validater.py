@@ -153,7 +153,7 @@ class PrivateKeyValidator(CommonContentValidator):
     digit_pattern = re.compile(r'[0-9]')
     upper_pattern = re.compile(r'[A-Z]')
     lower_pattern = re.compile(r'[a-z]')
-    special_pattern = re.compile(r'[`~!@#$%^&*()-_=+|[{}];:\'",<.>/? ]')
+    special_pattern = re.compile(r'[`~!@#$%^&*()-_=+|\[\{\}\];:\'",<.>/? ]')
 
     patterns = [digit_pattern, upper_pattern, lower_pattern, special_pattern]
 
