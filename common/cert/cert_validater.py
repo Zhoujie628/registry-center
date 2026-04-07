@@ -3,6 +3,7 @@ import os
 import re
 from abc import ABC, abstractmethod
 from pathlib import Path
+
 from cryptography import x509
 from cryptography.hazmat.primitives.asymmetric import rsa, ec
 
@@ -73,6 +74,7 @@ class PathValidatorLink(AbstractValidatorLink):
             PathValidator(conf_obj.ssl_crl_file, suffix=".crl", is_required=False, conf_tip="ssl_crl_file")
         ]
 
+
 class CommonContentValidator:
     def __init__(self, cert_path: str, conf_tip=""):
         self.cert_path = cert_path
@@ -134,8 +136,9 @@ class CerContentValidator(CommonContentValidator):
                 # 2. 密钥算法、长度校验，cer只校验公钥，因为没有私钥
                 if not self.validate_public_key_length(cert_obj.public_key):
                     return ValidationResult(False,
-                                            f"Certificate key algorithm or length does not meet requirements"
+                                            f"Certificate key algorithm or length does not meet requirements."
                                             f"{self.conf_tip}")
+
             # 3. 有效期校验，单独跑一把，确保每本证书的有效期对比的currentTime是同一个
             if not self.validate_certificate_validity(x509_obj):
                 return ValidationResult(False, f"Certificate is not valid at current time. {self.conf_tip}")
@@ -209,8 +212,10 @@ class PrivateKeyValidator(CommonContentValidator):
         finally:
             self.password_bytes = b''
 
+
 class CRLValidator(CommonContentValidator):
     crl_list_data = None
+
     def validate_crl_validity(self, crl_list: x509.CertificateRevocationList) -> bool:
         """验证CRL有效期"""
         current_time = datetime.datetime.now(datetime.timezone.utc)
@@ -221,13 +226,14 @@ class CRLValidator(CommonContentValidator):
             if self.cert_path is None or self.cert_path == '':
                 # 非必填，没填就不校验
                 return ValidationResult(True, "CRL not config! ")
+            # 到这里就是填了，填了就校验
             cert_path_obj = Path(self.cert_path)
             if not cert_path_obj.exists():
-                return ValidationResult(False, f"CRL file not exist： {self.cert_path}. {self.conf_tip}")
+                return ValidationResult(False, f"CRL file not exist：{self.cert_path}. {self.conf_tip}")
             # 读取CRL
             crl_list = cert_parser.parse_crl_list(self.cert_path)
             self.crl_list_data = crl_list
-            # 1. 校验CRL格式:X.509v2，有扩展的是V2，没有的是V1
+            # 1. 校验CRL格式:X.509v2，有扩展的是v2，没有扩展的是v1
             is_v2 = len(crl_list.extensions) > 0
             if not is_v2:
                 return ValidationResult(False, f"CRL format is not X.509v2. {self.conf_tip}")
@@ -275,7 +281,7 @@ class CertValidator:
         # 1. 基础校验，校验路径是否存在，文件名格式是否符合要求
         if not os.path.exists(CONFIG_FILE_PATH):
             return ValidationResult(False,
-                                    "Config file not exists! \"etc/conf/server.conf\" "
+                                    "Config file not exists! Please config \"etc/conf/server.conf\" "
                                     "file and try again.")
         result = PathValidatorLink(self.conf_obj).validate()
         if not result.is_valid:

@@ -9,6 +9,7 @@ class CertObj:
     public_key = None
     org_cert = None
 
+
     @classmethod
     def from_dict(cls, cert_dict):
         obj = cls()
@@ -21,6 +22,7 @@ class CertObj:
         obj.public_key = cert_dict.get('public_key', None)
         obj.org_cert = cert_dict.get('org_cert', None)
         return obj
+
 
 class X509Obj:
     private_key = None
