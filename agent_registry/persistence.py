@@ -9,24 +9,24 @@ from agent_registry.config import MAX_FILE_SIZE_BYTES
 
 
 def save_to_file(file_path: str, agents: List[Dict[str, Any]]) -> None:
-    """Save a list of agent dictionaries to a JSON file with seze limit and secure permissions."""
+    """Save a list of agent dictionaries to a JSON file with size limit and secure permissions."""
     try:
         # 确保目录存在
         Path(file_path).parent.mkdir(parents=True, exist_ok=True)
 
         # 将数据转换为 JSON 字符串并检查大小
         json_str = json.dumps(agents, ensure_ascii=False, indent=2)
-        data_size = len(json_str.encode("utf-8"))
+        data_size = len(json_str.encode('utf-8'))
         if data_size > MAX_FILE_SIZE_BYTES:
             error_msg = f"Data size ({data_size} bytes) exceeds maximum allowed ({MAX_FILE_SIZE_BYTES} bytes)"
             logger.error(error_msg)
-            raise Exception(error_msg)
+            raise ValueError(error_msg)
 
         # 写入文件
-        with open(file_path, "w", encoding='utf-8') as f:
+        with open(file_path, 'w', encoding='utf-8') as f:
             f.write(json_str)
 
-        # 设置文件权限为 600 （所有者读写）
+        # 设置文件权限为 600（所有者读写）
         os.chmod(file_path, 0o600)
 
         logger.info(f"Saved {len(agents)} agents to {file_path} ({data_size} bytes)")
@@ -47,7 +47,7 @@ def load_from_file(file_path: str) -> List[Dict[str, Any]]:
         if file_size > MAX_FILE_SIZE_BYTES:
             logger.error(
                 f"File {file_path} size ({file_size} bytes) exceeds maximum allowed ({MAX_FILE_SIZE_BYTES} bytes)."
-                f"Cannot load.")
+                f" Cannot load.")
             return []
     except OSError as e:
         logger.error(f"Failed to check file size for {file_path}: {e}")

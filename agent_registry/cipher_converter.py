@@ -12,28 +12,28 @@ class CipherConverter:
         'TLS_CHACHA20_POLY1305_SHA256': 'TLS_CHACHA20_POLY1305_SHA256',
 
         # ECDHE-ECDSA套件
-        'TLS_ECDHE_ECDSA_WITH_AES_256_GCM_SHA384': 'ECDHE_ECDSA_AES256_GCM_SHA384',
-        'TLS_ECDHE_ECDSA_WITH_AES_128_GCM_SHA256': 'ECDHE_ECDSA_AES128_GCM_SHA256',
+        'TLS_ECDHE_ECDSA_WITH_AES_256_GCM_SHA384': 'ECDHE-ECDSA-AES256-GCM-SHA384',
+        'TLS_ECDHE_ECDSA_WITH_AES_128_GCM_SHA256': 'ECDHE-ECDSA-AES128-GCM-SHA256',
 
         # ECDHE-RSA套件
-        'TLS_ECDHE_RSA_WITH_AES_256_GCM_SHA384': 'ECDHE_RSA_AES256_GCM_SHA384',
-        'TLS_ECDHE_RSA_WITH_AES_128_GCM_SHA256': 'ECDHE_RSA_AES128_GCM_SHA256',
+        'TLS_ECDHE_RSA_WITH_AES_256_GCM_SHA384': 'ECDHE-RSA-AES256-GCM-SHA384',
+        'TLS_ECDHE_RSA_WITH_AES_128_GCM_SHA256': 'ECDHE-RSA-AES128-GCM-SHA256',
 
         # DHE-RSA套件
-        'TLS_DHE_RSA_WITH_AES_256_GCM_SHA384': 'DHE_RSA_AES256_GCM_SHA384',
-        'TLS_DHE_RSA_WITH_AES_128_GCM_SHA256': 'DHE_RSA_AES128_GCM_SHA256',
+        'TLS_DHE_RSA_WITH_AES_256_GCM_SHA384': 'DHE-RSA-AES256-GCM-SHA384',
+        'TLS_DHE_RSA_WITH_AES_128_GCM_SHA256': 'DHE-RSA-AES128-GCM-SHA256',
 
         # DHE-DSS套件
-        'TLS_DHE_DSS_WITH_AES_256_GCM_SHA384': 'DHE_DSS_AES256_GCM_SHA384',
-        'TLS_DHE_DSS_WITH_AES_128_GCM_SHA256': 'DHE_DSS_AES128_GCM_SHA256',
+        'TLS_DHE_DSS_WITH_AES_256_GCM_SHA384': 'DHE-DSS-AES256-GCM-SHA384',
+        'TLS_DHE_DSS_WITH_AES_128_GCM_SHA256': 'DHE-DSS-AES128-GCM-SHA256',
     }
 
     @classmethod
     def convert(cls, iana_cipher_string: str) -> str:
         """
         将IANA格式的密码套件字符串转换为OpenSSL格式
-        输入： "TLS_AES_256_GCM_SHA384,TLS_AES_128_GCM_SHA256"
-        输入： "TLS_AES_256_GCM_SHA384,TLS_AES_128_GCM_SHA256"
+        输入: "TLS_AES_256_GCM_SHA384,TLS_AES_128_GCM_SHA256"
+        输出: "TLS_AES_256_GCM_SHA384:TLS_AES_128_GCM_SHA256"
         """
         # 1. 分割字符串
         ciphers = [c.strip() for c in iana_cipher_string.split(',')]
@@ -48,12 +48,12 @@ class CipherConverter:
                 converted = cls._auto_convert(cipher)
                 if converted:
                     openssl_ciphers.append(converted)
-                    logger.info(f"警告： 自动转换{cipher} -> {converted}")
+                    logger.info(f"警告: 自动转换 {cipher} -> {converted}")
                 else:
-                    logger.info(f"警告： 跳过无法识别的密码套件： {cipher}")
+                    logger.info(f"警告: 跳过无法识别的密码套件: {cipher}")
 
         # 3. 用冒号连接
-        return ":".join(openssl_ciphers)
+        return ':'.join(openssl_ciphers)
 
     @classmethod
     def _auto_convert(cls, cipher: str) -> str:

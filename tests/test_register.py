@@ -40,7 +40,7 @@ def valid_agent_data():
                 "description": "Test Skill Description",
                 "tags": ["test", "skill"],
                 "input_modes": ["text/plain"],
-                "output_modes": ["text/plain"],
+                "output_modes": ["text/plain"]
             }
         ]
     }
@@ -51,7 +51,7 @@ def test_register_agent_success(client, mock_registry, valid_agent_data):
     mock_registry.return_value.register.return_value = True
     response = client.post("/rest/a2a-t/v1/agent-register", json=agent.model_dump())
     assert response.status_code == 200
-    assert response.json is True
+    assert response.json() is True
 
 
 def test_register_agent_duplicate(client, mock_registry, valid_agent_data):
@@ -59,7 +59,7 @@ def test_register_agent_duplicate(client, mock_registry, valid_agent_data):
     mock_registry.return_value.register.return_value = False
     response = client.post("/rest/a2a-t/v1/agent-register", json=agent.model_dump())
     assert response.status_code == 200
-    assert response.json is False
+    assert response.json() is False
 
 
 @pytest.mark.parametrize("field_to_remove", [
@@ -73,7 +73,7 @@ def test_register_agent_duplicate(client, mock_registry, valid_agent_data):
     "version",
     "skills"
 ])
-def test_register_agent_missing_required_filed(client, mock_registry, valid_agent_data, field_to_remove):
+def test_register_agent_missing_required_field(client, mock_registry, valid_agent_data, field_to_remove):
     # 创建一个缺少指定字段的测试数据
     invalid_data = valid_agent_data.copy()
 
@@ -83,7 +83,7 @@ def test_register_agent_missing_required_filed(client, mock_registry, valid_agen
     # 尝试注册缺少字段的 Agent
     response = client.post("/rest/a2a-t/v1/agent-register", json=invalid_data)
 
-    # 验证返回状态码为422（请求无效）
+    # 验证返回状态码为 422（请求无效）
     assert response.status_code == 422
 
     # 验证错误信息中包含缺失字段

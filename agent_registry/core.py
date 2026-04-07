@@ -33,7 +33,7 @@ class RegistryCore:
         """Create a normalized key for indexing."""
         return name.strip(), organization.strip()
 
-    # ---------- Public API -----------
+    # ---------- Public API ----------
     async def register(self, agent: AgentCard) -> bool:
         """
         Register a new agent. Returns True if successful, False if duplicate.
@@ -48,7 +48,7 @@ class RegistryCore:
 
     def find_exact(self, name: Optional[str] = None, organization: Optional[str] = None) -> List[AgentCard]:
         """
-        Exact search based on name, organization, and provider (which is provided.organization).
+        Exact search based on name, organization, and provider (which is provider.organization).
         All parameters are optional; if multiple are given, they are combined with AND.
         """
         result = []
@@ -65,7 +65,7 @@ class RegistryCore:
     def get_agents(self):
         return self._agents
 
-    # ---------- Private API -----------
+    # ---------- Public helpers ----------
     def _save(self) -> None:
         """Persist current agents to file."""
         data = [agent.model_dump() for agent in self._agents.values()]

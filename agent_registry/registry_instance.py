@@ -1,4 +1,4 @@
-# ----------- Dependency: Registry Core (Singleton) ---------
+# ---------- Dependency: Registry Core (Singleton) ----------
 from functools import lru_cache
 
 from agent_registry.config import PERSISTENCE_FILE

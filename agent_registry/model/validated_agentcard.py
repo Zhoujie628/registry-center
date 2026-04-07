@@ -6,7 +6,7 @@ from pydantic import field_validator, model_validator, HttpUrl
 _NAME_PATTERN = re.compile(r'^[a-zA-Z0-9_]+(?:\s+[a-zA-Z0-9_]+)*$')
 
 NAME_MAX_LENGTH = 100
-ORGANIZATION_MAX_LENGTH = 100
+ORGNIZATION_MAX_LENGTH = 100
 DESCRIPTION_MAX_LENGTH = 1000
 URL_MAX_LENGTH = 1024
 VERSION_MAX_LENGTH = 50
@@ -19,7 +19,7 @@ AGENT_EXTENSION_MAX_LENGTH = 512
 _DANGEROUS_CHARS = re.compile(r'[\x00-\x1F\x7F\x80-\x9F\u2028\u2029\u202D\u202E\u200B\u200C\u200D\uFEFF\u2066-\u2069]')
 
 
-class ValidateAgentCard(AgentCard):
+class ValidatedAgentCard(AgentCard):
     """
     A2A-T requires information about the agent's service provider.
     """
@@ -32,7 +32,7 @@ class ValidateAgentCard(AgentCard):
             raise ValueError(f'The agent name can contain a maximum of {NAME_MAX_LENGTH} characters.')
         """验证名称仅包含字母、数字、下划线和空格"""
         if not _NAME_PATTERN.fullmatch(v):
-            raise ValueError(f'The name can contain only letters, digits, underscores (_), spaces.')
+            raise ValueError('The name can contain only letters, digits, underscores (_), spaces.')
         return v
 
     @field_validator('description')
@@ -50,7 +50,7 @@ class ValidateAgentCard(AgentCard):
         try:
             HttpUrl(url)
         except Exception as e:
-            raise ValueError(f'Provide URL must be a valid web URL.') from e
+            raise ValueError('Provider URL must be a valid web URL.') from e
         return url
 
     @field_validator('version')
@@ -62,7 +62,7 @@ class ValidateAgentCard(AgentCard):
 
     @field_validator('default_input_modes')
     @classmethod
-    def validate_default_input_modes(cls, default_input_modes: str) -> str:
+    def validate_default_input_modes(cls, default_input_modes: list[str]) -> list[str]:
         if len(default_input_modes) > INPUT_OUTPUT_MAX_LENGTH:
             raise ValueError(
                 f'The agent default_input_modes can contain a maximum of {INPUT_OUTPUT_MAX_LENGTH} params.')
@@ -80,11 +80,13 @@ class ValidateAgentCard(AgentCard):
     @classmethod
     def validate_skills(cls, skills: list[AgentSkill]) -> list[AgentSkill]:
         if len(skills) > MAX_NUMBER_OF_SKILLS:
-            raise ValueError(f'The agent can contain a maximum of {MAX_NUMBER_OF_SKILLS} skills.')
+            raise ValueError(
+                f'The agent can contain a maximum of {MAX_NUMBER_OF_SKILLS} skills')
         for skill in skills:
             skill_json = skill.model_dump_json()
             if len(skill_json) > SKILL_MAX_LENGTH:
-                raise ValueError(f'Skill JSON length exceeds the maximum allowed length of {SKILL_MAX_LENGTH}')
+                raise ValueError(
+                    f'Skill JSON length exceeds the maximum allowed length of {SKILL_MAX_LENGTH}')
         return skills
 
     @field_validator('capabilities')
@@ -92,8 +94,9 @@ class ValidateAgentCard(AgentCard):
     def validate_capabilities(cls, capabilities: AgentCapabilities) -> AgentCapabilities:
         if capabilities.extensions is not None:
             if len(capabilities.extensions) > MAX_NUMBER_OF_AGENT_EXTENSION:
-                raise ValueError(f'The number of supported protocol extensions of the agent can not exceed'
-                                 f'{MAX_NUMBER_OF_AGENT_EXTENSION}.')
+                raise ValueError(
+                    f'The number of supported protocol extensions of the agent can not exceed'
+                    f' {MAX_NUMBER_OF_AGENT_EXTENSION}.')
             for extension in capabilities.extensions:
                 extension_json = extension.model_dump_json()
                 if len(extension_json) > AGENT_EXTENSION_MAX_LENGTH:
@@ -102,7 +105,7 @@ class ValidateAgentCard(AgentCard):
                         f' {AGENT_EXTENSION_MAX_LENGTH}')
         return capabilities
 
-    @model_validator(model='after')
+    @model_validator(mode='after')
     def validate_provider(self):
         # 1. provide 必须存在
         if not self.provider:
@@ -114,8 +117,8 @@ class ValidateAgentCard(AgentCard):
             raise ValueError('Agent provider organization is required and cannot be empty.')
 
         # 3. 长度限制
-        if len(org) > ORGANIZATION_MAX_LENGTH:
-            raise ValueError(f'The agent organization can contain a maximum of {VERSION_MAX_LENGTH} characters.')
+        if len(org) > ORGNIZATION_MAX_LENGTH:
+            raise ValueError(f'The agent organization can contain a maximum of {ORGNIZATION_MAX_LENGTH} characters.')
 
         # 4. 高危字符检查
         if _DANGEROUS_CHARS.search(org):
@@ -130,6 +133,6 @@ class ValidateAgentCard(AgentCard):
             try:
                 HttpUrl(url)
             except Exception as e:
-                raise ValueError("Provide URL must be a valid web URL.") from e
+                raise ValueError('Provide URL must be a valid web URL.') from e
 
         return self

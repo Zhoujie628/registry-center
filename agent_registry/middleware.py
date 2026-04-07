@@ -6,6 +6,7 @@ from loguru import logger
 from starlette.middleware.base import BaseHTTPMiddleware
 
 
+
 class ConnectionLimitMiddleware(BaseHTTPMiddleware):
     """Connection limit middleware"""
 
@@ -65,6 +66,6 @@ class TimeoutMiddleware(BaseHTTPMiddleware):
                 status_code=status.HTTP_504_GATEWAY_TIMEOUT,
                 content={
                     "code": status.HTTP_504_GATEWAY_TIMEOUT,
-                    "message": f"Request processing timeout.({self.timeout_seconds}秒)"
+                    "message": f"Request processing timeout. ({self.timeout_seconds}秒)"
                 }
             )
