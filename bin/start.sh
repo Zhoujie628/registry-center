@@ -16,7 +16,7 @@ if [ -d "$ROOT_DIR" ]; then
     cd $ROOT_DIR
     echo "Current working directory: $(pwd)"
 else
-  echo "The project root path does not exist"
+  echo "The project root path does not exist."
   exit 1
 fi
 
@@ -27,7 +27,7 @@ CURRENT_GID=$(id -g)
 
 # Check if running as root
 if [ "$EUID" -eq 0 ]; then
-    echo "⚠ ===== Security Warning ====="
+    echo "⚠  ===== Security Warning ====="
     echo "You are currently running as root!"
     echo "Executing commands as root may pose security risks. Please proceed with caution."
     echo "   It is recommended to use root privileges only when necessary."
@@ -61,7 +61,7 @@ fi
 
 # Check if Python script 'start.py' exists in the target directory
 PYTHON_SCRIPT="${TARGET_DIR}/start.py"
-if [ -f "$Python_SCRIPT" ]; then
+if [ -f "$PYTHON_SCRIPT" ]; then
     echo "Python script found:$PYTHON_SCRIPT"
 else
     echo "Error: Python script start.py does not exist in $TARGET_DIR"

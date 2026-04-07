@@ -1,10 +1,10 @@
 # agent_registry/server.py
 """
-Agent Registry Service - RESTful API for managing AI Agent cards
+Agent Registry Service - RESTful API for managing AI Agent cards.
 
 This module provides a FastAPI application with endpoints for registering
 and querying agents. It includes rate limiting, request size checks,
-and persistence using a JSON file
+and persistence using a JSON file.
 """
 
 import asyncio
@@ -18,7 +18,7 @@ from fastapi import FastAPI, HTTPException, Query, Request, Depends, status
 from fastapi.responses import JSONResponse
 from loguru import logger
 from limits import strategies, storage, parse_many
-from starlette.reponses import Response
+from starlette.responses import Response
 
 from agent_registry.config import (
     MAX_REQUEST_BODY_SIZE,
@@ -40,7 +40,7 @@ sync_storage = storage.MemoryStorage()
 # Moving window strategy provides smoother rate limiting.
 limiter = strategies.MovingWindowRateLimiter(sync_storage)
 
-audit_handle = HandlerRegistry.get_handler(IntegerfaceType.AUDIT)
+audit_handle = HandlerRegistry.get_handler(InterfaceType.AUDIT)
 
 
 def parse_rate_limit(interface_name: str):
@@ -73,7 +73,7 @@ def parse_rate_limit(interface_name: str):
     try:
         items = parse_many(rate_string)
         return items[0] if items else None
-    except Exceptino as e:
+    except Exception as e:
         logger.error(f"Failed to parse rate limit string '{rate_string}': {e}")
         return None
 
@@ -90,7 +90,7 @@ async def async_hit(rate_item, *identifiers: str, cost=1) -> bool:
 class RateLimiter:
     """
     FastAPI dependency for rate limiting requests based on client IP.
-    Users X-Forwarded-For header when behind a proxy.
+    Uses X-Forwarded-For header when behind a proxy.
     """
 
     def __init__(self, interface_name: str = None):
@@ -99,7 +99,7 @@ class RateLimiter:
             raise ValueError("Invalid rate limit configuration")
 
     async def __call__(self, request: Request):
-        # Determine client identifier: prefer X-Forwarded_For, fallback to direct IP.
+        # Determine client identifier: prefer X-Forwarded-For, fallback to direct IP.
         identifier = request.client.host
         # Check rate limit; if exceeded, raise 429.
         if not await async_hit(self.rate_item, identifier):
@@ -124,12 +124,12 @@ config = get_conf()
 
 app.add_middleware(
     ConnectionLimitMiddleware,
-    max_connections=int(config,get(CONN_MAX, 11))
+    max_connections=int(config.get(CONN_MAX, 11))
 )
 
 app.add_middleware(
     TimeoutMiddleware,
-    timeout_seconds=int(config,get(CONN_TIMEOUT, 30))
+    timeout_seconds=int(config.get(CONN_TIMEOUT, 30))
 )
 
 register_semaphore = anyio.Semaphore(int(config.get(FLOW_CTL_PARALLEL_REGISTER, 1)))
@@ -149,7 +149,7 @@ async def security_middleware(request: Request, call_next):
     if len(str(request.url)) > MAX_URL_LENGTH:
         return Response(
             content="URI Too Long",
-            status_code=statuts.HTTP_414_URI_TOO_LONG,
+            status_code=status.HTTP_414_URI_TOO_LONG,
         )
     # Body size check for write methods
     if request.method in ("POST", "PUT"):
@@ -224,7 +224,7 @@ async def _perform_registration(
         client_ip: str,
         details: dict,
 ) -> bool:
-    """执行实际的注册操作，处理可能得 ValueError 和其他异常，并记录对应日志。"""
+    """执行实际的注册操作，处理可能的 ValueError 和其他异常，并记录对应日志。"""
     try:
         save_handle = HandlerRegistry.get_handler(InterfaceType.INSERT)
         success = await save_handle.handle(agent)
@@ -276,7 +276,7 @@ async def register_agent(
         agent: ValidatedAgentCard,
         request: Request,
         _: Any = Depends(RateLimiter('register')),
-        register: RegistryCore = Depends(get_registry),
+        registry: RegistryCore = Depends(get_registry),
 ):
     """
     Register a new agent.
@@ -295,8 +295,8 @@ async def register_agent(
     try:
         register_semaphore.acquire_nowait()
         acquired = True
-        await _check_agent_limit(register, client_ip, details)
-        await _check_duplicate_agent(agent, register, client_ip, details)
+        await _check_agent_limit(registry, client_ip, details)
+        await _check_duplicate_agent(agent, registry, client_ip, details)
         result = await _perform_registration(agent, registry, client_ip, details)
         return JSONResponse(
             content=result,
