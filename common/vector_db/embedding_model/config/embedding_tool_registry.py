@@ -9,7 +9,7 @@ def embedding_tool_register(keys):
             for key in keys:
                 EMBEDDING_TOOL_REGISTRY.register(key,cls)
         else:
-            EMBEDDING_TOOL_REGISTRY.register(key,cls)
+            EMBEDDING_TOOL_REGISTRY.register(keys,cls)
         return cls
 
     return decorator
