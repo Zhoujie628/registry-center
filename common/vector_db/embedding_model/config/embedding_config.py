@@ -27,7 +27,7 @@ class EmbeddingConfig:
        self.version = config["version"]
 
 def get_embedding_config() -> {str,EmbeddingConfig}:
-    config: dict[str,dict] = read_config_as_json("../../../config/embedding_config.json.json")
+    config: dict[str,dict] = read_config_as_json("../../config/embedding_config.json")
     embedding_config_item = {}
     for key, value_list in config.items():
         embedding_config_item[key] = EmbeddingConfig(key,value_list)

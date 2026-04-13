@@ -25,7 +25,7 @@ class VectorDBConfig:
         self.version = config['version']
 
 def get_vectordb_config() -> {str, VectorDBConfig}:
-    config: dict[str,dict] = read_config_as_json("../../../config/vectordb_config.json")
+    config: dict[str,dict] = read_config_as_json("../../config/vectordb_config.json")
     vectordb_config_item = {}
     for key, value_list in config.items():
         vectordb_config_item[key] = VectorDBConfig(key, value_list)

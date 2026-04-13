@@ -4,7 +4,7 @@ from common.vector_db.embedding_model.config.embedding_tool import EmbeddingTool
 from common.vector_db.embedding_model.config.embedding_tool_registry import embedding_tool_register
 
 
-@embedding_tool_register(EmbeddingType.BGE_EMBEDDING)
+@embedding_tool_register(EmbeddingType.BGELargeZH)
 class BgeLargeEmbeddingTool(EmbeddingTool):
     def __init__(self,config:dict):
         super().__init__(config)
