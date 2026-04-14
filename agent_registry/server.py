@@ -29,6 +29,7 @@ from agent_registry.core import RegistryCore
 from agent_registry.registry_instance import get_registry
 from agent_registry.middleware import ConnectionLimitMiddleware, TimeoutMiddleware
 from agent_registry.model.validated_agentcard import ValidatedAgentCard
+from agent_registry.signature.validator_instance import get_agent_card_validator
 from common.custom.custom_handle import HandlerRegistry
 from common.custom.interface_type import InterfaceType
 from common.log.audit_logger import OperationResult, LogLevel, OperatorObject, OperationName
@@ -284,6 +285,16 @@ async def register_agent(
     Returns True if registered, False if duplicate.
     """
     client_ip = request.client.host
+    
+    # 验证AgentCard签名
+    signature_validator = get_agent_card_validator()
+    validation_result = signature_validator.validate_agent_card(agent)
+    if not validation_result.is_valid:
+        logger.error(f"AgentCard signature validation failed: {validation_result.error_message}")
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail=f"Signature validation failed: {validation_result.error_message}"
+        )
     details = {
         "agentName": agent.name,
         "organization": agent.provider.organization,

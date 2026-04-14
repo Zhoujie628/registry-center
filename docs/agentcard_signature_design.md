@@ -604,23 +604,22 @@ def create_backend_key_fetcher(
 #### jku公钥获取函数
 
 ```python
-def create_jku_key_fetcher(jwk_fetcher: JWKFetcher) -> Callable[[str, str], Optional[JWK]]:
+def fetch_jku_key(jwk_fetcher: JWKFetcher, jku: str, kid: str) -> Optional[JWK]:
     """
-    创建jku公钥获取函数
+    从jku获取公钥
     
     Args:
         jwk_fetcher: JWKFetcher实例
+        jku: JWK Set URL
+        kid: 密钥ID
     
     Returns:
-        Callable: 接收(jku, kid)参数，返回JWK对象
+        Optional[JWK]: JWK对象，不存在返回None
     """
-    def fetch_jku_key(jku: str, kid: str) -> Optional[JWK]:
-        jwks = jwk_fetcher.fetch_jwks(jku)
-        if jwks:
-            return jwk_fetcher.find_key_by_id(jwks, kid)
-        return None
-    
-    return fetch_jku_key
+    jwks = jwk_fetcher.fetch_jwks(jku)
+    if jwks:
+        return jwk_fetcher.find_key_by_id(jwks, kid)
+    return None
 ```
 
 ### 8.3 完整验签流程实现
@@ -676,8 +675,7 @@ class AgentCardValidator:
                     pass
             
             # 步骤5：从jku获取临时公钥
-            jku_key_fetcher = self.jwk_fetcher.create_jku_key_fetcher()
-            verifier = create_signature_verifier(jku_key_fetcher, ['ES256', 'RS256'])
+            verifier = create_signature_verifier(self.jwk_fetcher.fetch_jku_key, ['ES256', 'RS256'])
             try:
                 verifier(agent_card)
                 return ValidationResult(is_valid=True)

@@ -120,27 +120,28 @@ class JWKFetcher:
             agent_name: Agent名称
         
         Returns:
-            Callable: 接收(jku, kid)参数，返回JWK对象
+            Callable: 接收(kid, jku)参数，返回JWK对象
         """
-        def fetch_backend_key(jku: str, kid: str) -> Optional[JWK]:
+        def fetch_backend_key(kid: str, jku: str) -> Optional[JWK]:
             return self.fetch_from_backend(kid, organization, agent_name)
         
         return fetch_backend_key
     
-    def create_jku_key_fetcher(self) -> Callable[[str, str], Optional[JWK]]:
+    def fetch_jku_key(self, kid: str, jku: str) -> Optional[JWK]:
         """
-        创建jku公钥获取函数
+        从jku获取公钥
+        
+        Args:
+            jku: JWK Set URL
+            kid: 密钥ID
         
         Returns:
-            Callable: 接收(jku, kid)参数，返回JWK对象
+            Optional[JWK]: JWK对象，不存在返回None
         """
-        def fetch_jku_key(jku: str, kid: str) -> Optional[JWK]:
-            jwks = self.fetch_jwks(jku)
-            if jwks:
-                return self.find_key_by_id(jwks, kid)
-            return None
-        
-        return fetch_jku_key
+        jwks = self.fetch_jwks(jku)
+        if jwks:
+            return self.find_key_by_id(jwks, kid)
+        return None
     
     def create_combined_key_fetcher(
         self,

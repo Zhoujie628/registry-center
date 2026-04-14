@@ -8,6 +8,7 @@ from a2a.utils.signing import create_signature_verifier, InvalidSignaturesError,
 
 from agent_registry.signature.models import SignatureObject, ProtectedHeader
 from agent_registry.signature.jwk_fetcher import JWKFetcher
+from agent_registry.model.validated_agentcard import ValidatedAgentCard
 
 
 class ValidationResult:
@@ -25,7 +26,7 @@ class ValidationResult:
         self.details = details or {}
 
 
-class AgentCardValidator:
+class AgentCardSignatureValidator:
     """AgentCard签名验证器"""
     
     def __init__(self, jwk_fetcher: JWKFetcher):
@@ -33,24 +34,22 @@ class AgentCardValidator:
     
     def validate_agent_card(
         self,
-        agent_card_data: dict,
-        organization: str,
-        agent_name: str
+        agent_card: ValidatedAgentCard
     ) -> ValidationResult:
         """
         验证AgentCard的签名
         
         Args:
-            agent_card_data: AgentCard数据
-            organization: 组织名称
-            agent_name: Agent名称
+            agent_card: ValidatedAgentCard对象
         
         Returns:
             ValidationResult: 验证结果
         """
         try:
-            agent_card = AgentCard(**agent_card_data)
+            organization = agent_card.provider.organization
+            agent_name = agent_card.name
             
+            agent_card_data = agent_card.model_dump()
             signatures = self._extract_signatures(agent_card_data)
             if not signatures:
                 return ValidationResult(
@@ -88,8 +87,7 @@ class AgentCardValidator:
 
             # 步骤3：尝试从jku获取公钥并验签
             logger.info(f"Trying jku key signature.")
-            jku_key_fetcher = self.jwk_fetcher.create_jku_key_fetcher()
-            verifier = create_signature_verifier(jku_key_fetcher, ['ES256', 'RS256'])
+            verifier = create_signature_verifier(self.jwk_fetcher.fetch_jku_key, ['ES256', 'RS256'])
             try:
                 verifier(agent_card)
                 logger.info(f"Signature validation passed with jku key.")
