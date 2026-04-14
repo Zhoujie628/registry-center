@@ -1,3 +1,18 @@
+# Copyright (c) 2026 Huawei Technologies Co., Ltd.
+# All Rights Reserved.
+#
+#    Licensed under the Apache License, Version 2.0 (the "License"); you may
+#    not use this file except in compliance with the License. You may obtain
+#    a copy of the License at
+#
+#         http://www.apache.org/licenses/LICENSE-2.0
+#
+#    Unless required by applicable law or agreed to in writing, software
+#    distributed under the License is distributed on an "AS IS" BASIS, WITHOUT
+#    WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied. See the
+#    License for the specific language governing permissions and limitations
+#    under the License.
+
 # agent_registry/start.py
 import asyncio
 import os
@@ -93,16 +108,16 @@ class CustomUvicornServer:
             app=app,
             host=self.server_config.get("ip", "127.0.0.1"),
             port=int(self.server_config.get("port", 5000)),
-            # ssl_certfile=self.conf_obj.ssl_certfile,
-            # # 私钥路径
-            # ssl_keyfile=self.conf_obj.ssl_keyfile,
-            # # 私钥密码
-            # ssl_keyfile_password=load_cert_password(self.conf_obj.ssl_keyfile_password).decode(DEFAULT_ENCODING),
-            # # 信任证书
-            # ssl_ca_certs=self.conf_obj.ssl_ca_certs,
-            # # 是否校验客户端证书，填了如果浏览器没证书就没法访问了
-            # ssl_cert_reqs=self.conf_obj.verify_client,
-            # ssl_ciphers=CipherConverter.convert(self.server_config.get(TLS_CIPHER)),
+            ssl_certfile=self.conf_obj.ssl_certfile,
+            # 私钥路径
+            ssl_keyfile=self.conf_obj.ssl_keyfile,
+            # 私钥密码
+            ssl_keyfile_password=load_cert_password(self.conf_obj.ssl_keyfile_password).decode(DEFAULT_ENCODING),
+            # 信任证书
+            ssl_ca_certs=self.conf_obj.ssl_ca_certs,
+            # 是否校验客户端证书，填了如果浏览器没证书就没法访问了
+            ssl_cert_reqs=self.conf_obj.verify_client,
+            ssl_ciphers=CipherConverter.convert(self.server_config.get(TLS_CIPHER)),
             timeout_keep_alive=0,
             timeout_graceful_shutdown=int(self.server_config.get(CONN_TIMEOUT, 30)),
             log_level="info",
@@ -117,9 +132,9 @@ def main():
     try:
         # 校验配置
         conf_obj = conf_singleton_obj
-        # result = CertValidator(conf_obj).validate()
-        # if not result.is_valid:
-        #     sys.exit(result.message)
+        result = CertValidator(conf_obj).validate()
+        if not result.is_valid:
+            sys.exit(result.message)
         # 通过校验后修改etc/ssl文件夹权限为700，里面文件权限为600
         set_ssl_folder_permissions()
         # 创建并启动服务器
