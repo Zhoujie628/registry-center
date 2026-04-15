@@ -1,11 +1,8 @@
 import json
 import base64
 from typing import Optional, List, Dict, Any
-
-from a2a.utils.helpers import validate
 from loguru import logger
 
-from a2a.types import AgentCard
 from a2a.utils.signing import create_signature_verifier, InvalidSignaturesError, NoSignatureError
 
 from agent_registry.signature.models import SignatureObject, ProtectedHeader
@@ -89,7 +86,7 @@ class AgentCardSignatureValidator:
 
             # 步骤3：尝试从jku获取公钥并验签
             logger.info(f"Trying jku key signature.")
-            jku_key_fetcher = lambda jku, key_id: self.jwk_fetcher.fetch_jku_key(jku, key_id)
+            jku_key_fetcher = lambda jku, key_id: self.jwk_fetcher.fetch_jku_key(key_id, jku)
             verifier = create_signature_verifier(jku_key_fetcher, ['ES256', 'RS256'])
             try:
                 verifier(agent_card)

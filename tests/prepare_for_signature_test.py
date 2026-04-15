@@ -12,7 +12,9 @@ AgentCard签名测试脚本
 
 import json
 import base64
-import hashlib
+from jose import jws
+from a2a.types import AgentCard
+from a2a.utils.helpers import canonicalize_agent_card
 from cryptography.hazmat.primitives.asymmetric import ec
 from cryptography.hazmat.primitives import serialization
 from cryptography.hazmat.backends import default_backend
@@ -156,43 +158,25 @@ def base64url_encode(data):
 
 
 def sign_agent_card(private_key, agent_card, protected_header):
-    """
-    对AgentCard进行签名
-    
-    Args:
-        private_key: 私钥对象
-        agent_card: AgentCard数据
-        protected_header: protected头
-    
-    Returns:
-        dict: 签名对象
-    """
-    # 1. 编码protected头
-    protected_b64url = base64url_encode(json.dumps(protected_header, sort_keys=True))
-    
-    # 2. 编码payload（AgentCard的JSON，不包含signatures）
-    payload_b64url = base64url_encode(json.dumps(agent_card, sort_keys=True))
-    
-    # 3. 构造待签名的数据
-    signing_input = f"{protected_b64url}.{payload_b64url}"
-    signing_input_bytes = signing_input.encode('utf-8')
-    
-    # 4. 使用私钥签名
-    signature = private_key.sign(
-        signing_input_bytes,
-        ec.ECDSA(hashes.SHA256())
+    # 1. 构造 AgentCard 对象并规范化 payload
+    agent_card_obj = AgentCard(**agent_card)
+    payload_str = canonicalize_agent_card(agent_card_obj)
+    payload_bytes = payload_str.encode('utf-8')  # 转换为 bytes
+
+    # 2. 使用 JWS 库签名
+    signature = jws.sign(
+        payload_bytes,
+        private_key,
+        algorithm=protected_header['alg'],
+        headers=protected_header
     )
-    
-    # 5. 将签名转换为base64url编码
-    signature_b64url = base64.urlsafe_b64encode(signature).decode('utf-8').rstrip('=')
-    
-    # 6. 构造签名对象
-    signature_obj = {
-        "protected": protected_b64url,
-        "signature": signature_b64url
+
+    # 3. 解析 JWS 格式：protected.payload.signature
+    parts = signature.split('.')
+    return {
+        "protected": parts[0],
+        "signature": parts[2]
     }
-    
-    return signature_obj
 
 
 def create_backend_key_file(organization, agent_name, jwk):
