@@ -5,6 +5,10 @@ from cryptography.x509.oid import NameOID
 from cryptography.hazmat.primitives import hashes, serialization
 from cryptography.hazmat.primitives.asymmetric import rsa
 
+"""
+本文件用于生成证书文件，生成后运行agent_registry/start.py本地启动
+"""
+
 # ========== 配置 ==========
 RSA_KEY_SIZE = 3072
 CERT_VALID_DAYS = 365

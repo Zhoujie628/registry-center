@@ -4,23 +4,20 @@ AgentCard签名测试脚本
 
 这个脚本演示如何：
 1. 生成ECDSA密钥对
-2. 构造AgentCard数据
-3. 对AgentCard进行签名
-4. 创建后台公钥文件
+2. 创建后台公钥文件
+3. 构造AgentCard数据
+4. 对AgentCard进行签名
 5. 测试验签能力
 """
 
 import json
 import base64
-from jose import jws
 from a2a.types import AgentCard
 from a2a.utils.helpers import canonicalize_agent_card
-from a2a.utils.signing import create_agent_card_signer, ProtectedHeader, create_signature_verifier
+from a2a.utils.signing import create_agent_card_signer, create_signature_verifier
 from cryptography.hazmat.primitives.asymmetric import ec
 from cryptography.hazmat.primitives import serialization
 from cryptography.hazmat.backends import default_backend
-from cryptography.hazmat.primitives import hashes
-from cryptography.exceptions import InvalidSignature
 from datetime import datetime
 
 from agent_registry.signature.jwk_fetcher import JWKFetcher

@@ -96,7 +96,8 @@ class AgentCardSignatureValidator:
                 logger.error("No jku key found.")
             except InvalidSignaturesError:
                 logger.error("Jku key signature validations failed")
-            
+
+            # 以上两种验签方式均失败则视为验签失败，报告错误信息并返回
             logger.error("All signature validations failed")
             return ValidationResult(
                 is_valid=False,

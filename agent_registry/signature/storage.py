@@ -5,7 +5,9 @@ from loguru import logger
 
 
 class StoragePath:
-    """存储路径工具类"""
+    """
+    存储路径工具类，用于后台公钥文件路径创建，权限设置等管理
+    """
     
     BASE_DIR = os.path.join(Path(__file__).parent.parent.parent, "etc", "sign_verify", "jwks")
     

@@ -1,7 +1,6 @@
 import os
 import json
 import datetime
-from pathlib import Path
 from typing import Optional, List
 from loguru import logger
 
@@ -149,7 +148,6 @@ class PublicKeyManager:
         """
         try:
             storage_path = StoragePath.get_storage_path(organization, agent_name)
-            
             if not StoragePath.is_valid_path(storage_path):
                 logger.warning(f"公钥配置文件不存在: {storage_path}")
                 return JWKS(keys=[])
