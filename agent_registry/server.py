@@ -24,13 +24,13 @@ and persistence using a JSON file.
 
 import asyncio
 from functools import partial
-from http import HTTPStatus
-from typing import List, Optional, Tuple, Any
+from typing import Optional, Tuple, Any
 
 import anyio
 from a2a.types import AgentCard
 from fastapi import FastAPI, HTTPException, Query, Request, Depends, status
 from fastapi.responses import JSONResponse
+from google.protobuf.json_format import Parse
 from loguru import logger
 from limits import strategies, storage, parse_many
 from starlette.responses import Response
@@ -41,9 +41,9 @@ from agent_registry.config import (
     FLOW_CTL_QUERY, AGENT_NUM_MAX,
 )
 from agent_registry.core import RegistryCore
+from agent_registry.model.validated_agentcard import validate_agent_card
 from agent_registry.registry_instance import get_registry
 from agent_registry.middleware import ConnectionLimitMiddleware, TimeoutMiddleware
-from agent_registry.model.validated_agentcard import ValidatedAgentCard
 from common.custom.custom_handle import HandlerRegistry
 from common.custom.interface_type import InterfaceType
 from common.log.audit_logger import OperationResult, LogLevel, OperatorObject, OperationName
@@ -213,7 +213,7 @@ async def _check_agent_limit(registry: RegistryCore, client_ip: str, details: di
         )
 
 
-async def _check_duplicate_agent(agent: ValidatedAgentCard, registry: RegistryCore, client_ip: str,
+async def _check_duplicate_agent(agent: AgentCard, registry: RegistryCore, client_ip: str,
                                  details: dict) -> None:
     """检查是否已存在相同 (name, organization) 的 agent，若存在则记录并抛出异常。"""
     key = _make_agent_key(agent.name, agent.provider.organization)
@@ -234,8 +234,7 @@ async def _check_duplicate_agent(agent: ValidatedAgentCard, registry: RegistryCo
 
 
 async def _perform_registration(
-        agent: ValidatedAgentCard,
-        registry: RegistryCore,
+        agent: dict,
         client_ip: str,
         details: dict,
 ) -> bool:
@@ -288,7 +287,6 @@ async def _perform_registration(
     status_code=status.HTTP_201_CREATED,
 )
 async def register_agent(
-        agent: ValidatedAgentCard,
         request: Request,
         _: Any = Depends(RateLimiter('register')),
         registry: RegistryCore = Depends(get_registry),
@@ -298,6 +296,9 @@ async def register_agent(
     The combination (name, provider.organization) must be unique.
     Returns True if registered, False if duplicate.
     """
+
+    body = await request.body()
+    agent = Parse(body, AgentCard())
     client_ip = request.client.host
     details = {
         "agentName": agent.name,
@@ -312,7 +313,8 @@ async def register_agent(
         acquired = True
         await _check_agent_limit(registry, client_ip, details)
         await _check_duplicate_agent(agent, registry, client_ip, details)
-        result = await _perform_registration(agent, registry, client_ip, details)
+        validate_agent_card(agent)
+        result = await _perform_registration(agent, client_ip, details)
         return JSONResponse(
             content=result,
             status_code=status.HTTP_201_CREATED,
@@ -326,14 +328,14 @@ async def register_agent(
 
 @app.get(
     "/rest/a2a-t/v1/agents/query",
-    response_model=List[AgentCard],
+    response_model=None,
     summary="Exact search",
 )
 async def list_agents_exact(
         request: Request,
         name: Optional[str] = Query(None, description="Exact agent name"),
         organization: Optional[str] = Query(None, description="Exact organization"),
-        registry: RegistryCore = Depends(get_registry), _: Any = Depends(RateLimiter('query')),
+        _: Any = Depends(RateLimiter('query')),
 ):
     """
     Search agents by exact fields (AND combination).
@@ -349,7 +351,8 @@ async def list_agents_exact(
         try:
             query_handle = HandlerRegistry.get_handler(InterfaceType.QUERY)
             agents = await query_handle.handle(name, organization)
-            return agents
+            from google.protobuf.json_format import MessageToDict
+            return [MessageToDict(card) for card in agents]
         except Exception as e:
             logger.error(f"Error in exact search: {e}")
             raise HTTPException(
