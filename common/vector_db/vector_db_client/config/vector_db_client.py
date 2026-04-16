@@ -13,12 +13,36 @@
 #    License for the specific language governing permissions and limitations
 #    under the License.
 
-"""
-LLM Module
+from abc import ABC, abstractmethod
 
-This module provides a client wrapper for interacting with LLM API.
-"""
-from .llm import get_llm_instance
-from .provider.llm_openai import OpenAIStyleLLM
+class VectorDBClient(ABC):
+    def __init__(self, config: dict):
+        self.config = config
 
-__all__ = ["OpenAIStyleLLM", "get_llm_instance"]
+    @abstractmethod
+    def create_collection(self,data):
+        pass
+
+    @abstractmethod
+    def insert_entity(self,data):
+        pass
+
+    @abstractmethod
+    def delete_entity(self,data):
+        pass
+
+    @abstractmethod
+    def update_entity(self,data):
+        pass
+
+    @abstractmethod
+    def retrieve_entity(self,data):
+        pass
+
+    @abstractmethod
+    def query_by_key(self,data):
+        pass
+
+    @abstractmethod
+    def get_all_entities(self,data):
+        pass

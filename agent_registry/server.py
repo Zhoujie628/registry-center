@@ -1,3 +1,18 @@
+# Copyright (c) 2026 Huawei Technologies Co., Ltd.
+# All Rights Reserved.
+#
+#    Licensed under the Apache License, Version 2.0 (the "License"); you may
+#    not use this file except in compliance with the License. You may obtain
+#    a copy of the License at
+#
+#         http://www.apache.org/licenses/LICENSE-2.0
+#
+#    Unless required by applicable law or agreed to in writing, software
+#    distributed under the License is distributed on an "AS IS" BASIS, WITHOUT
+#    WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied. See the
+#    License for the specific language governing permissions and limitations
+#    under the License.
+
 # agent_registry/server.py
 """
 Agent Registry Service - RESTful API for managing AI Agent cards.
@@ -318,7 +333,7 @@ async def _perform_update(
             "details": details,
             "client_ip": client_ip
         })
-        logger.error(f"Unexpected error in register: {e}")
+        logger.error(f"Unexpected error in update: {e}")
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail="Internal server error",
@@ -491,6 +506,7 @@ async def deregister_agent(
 async def retrieve_agents_by_task(
         request: Request,
         task: str = Query(..., description="Natural language task description"),
+        top_n: int = 10,
         _: Any = Depends(RateLimiter('retrieve'))
 ):
     """
@@ -508,7 +524,7 @@ async def retrieve_agents_by_task(
         acquired = True
         try:
             retrieve_handle = HandlerRegistry.get_handler(InterfaceType.RETRIEVE)
-            agents = await retrieve_handle.handle(task)
+            agents = await retrieve_handle.handle(task,top_n)
             return agents
         except Exception as e:
             logger.error(f"Error in exact search: {e}")

@@ -13,12 +13,13 @@
 #    License for the specific language governing permissions and limitations
 #    under the License.
 
-"""
-LLM Module
+from abc import ABC, abstractmethod
 
-This module provides a client wrapper for interacting with LLM API.
-"""
-from .llm import get_llm_instance
-from .provider.llm_openai import OpenAIStyleLLM
 
-__all__ = ["OpenAIStyleLLM", "get_llm_instance"]
+class EmbeddingTool(ABC):
+    def __init__(self, config: dict):
+        self.config = config
+
+    @abstractmethod
+    def get_embedding_vector(self,context:str):
+        pass
