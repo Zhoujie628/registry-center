@@ -1,3 +1,18 @@
+# Copyright (c) 2026 Huawei Technologies Co., Ltd.
+# All Rights Reserved.
+#
+#    Licensed under the Apache License, Version 2.0 (the "License"); you may
+#    not use this file except in compliance with the License. You may obtain
+#    a copy of the License at
+#
+#         http://www.apache.org/licenses/LICENSE-2.0
+#
+#    Unless required by applicable law or agreed to in writing, software
+#    distributed under the License is distributed on an "AS IS" BASIS, WITHOUT
+#    WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied. See the
+#    License for the specific language governing permissions and limitations
+#    under the License.
+
 # agent_registry/server.py
 """
 Agent Registry Service - RESTful API for managing AI Agent cards.
@@ -9,21 +24,23 @@ and persistence using a JSON file.
 
 import asyncio
 from functools import partial
-from http import HTTPStatus
 from typing import List, Optional, Tuple, Any
 
 import anyio
 from a2a.types import AgentCard
-from fastapi import FastAPI, HTTPException, Query, Request, Depends, status
+from fastapi import FastAPI, HTTPException, Query, Request, Depends, status, Path, Body
 from fastapi.responses import JSONResponse
 from loguru import logger
 from limits import strategies, storage, parse_many
+from openai import organization
 from starlette.responses import Response
 
 from agent_registry.config import (
     MAX_REQUEST_BODY_SIZE,
     MAX_URL_LENGTH, CONN_TIMEOUT, CONN_MAX, FLOW_CTL_PARALLEL_REGISTER, FLOW_CTL_PARALLEL_QUERY, FLOW_CTL_REGISTER,
-    FLOW_CTL_QUERY, AGENT_NUM_MAX,
+    FLOW_CTL_QUERY, AGENT_NUM_MAX, FLOW_CTL_PARALLEL_UPDATE, FLOW_CTL_PARALLEL_GET, FLOW_CTL_PARALLEL_RETRIEVE,
+    FLOW_CTL_PARALLEL_DEREGISTER, FLOW_CTL_UPDATE, FLOW_CTL_GET, FLOW_CTL_RETRIEVE, FLOW_CTL_DEREGISTER,
+    FLOW_CTL_JWK, FLOW_CTL_PARALLEL_JWK,
 )
 from agent_registry.core import RegistryCore
 from agent_registry.registry_instance import get_registry
@@ -52,8 +69,13 @@ def parse_rate_limit(interface_name: str):
     """
     # Mapping from interface name to config key and default value
     config_map = {
-        "register": (FLOW_CTL_REGISTER, 10),
-        "query": (FLOW_CTL_QUERY, 10),
+        "register": (FLOW_CTL_REGISTER, 50),
+        "query": (FLOW_CTL_QUERY, 100),
+        "update": (FLOW_CTL_UPDATE, 100),
+        "get": (FLOW_CTL_GET, 100),
+        "retrieve": (FLOW_CTL_RETRIEVE, 100),
+        "deregister": (FLOW_CTL_DEREGISTER, 50),
+        "jwk": (FLOW_CTL_JWK, 10),
     }
 
     # Get the corresponding config entry
@@ -133,8 +155,13 @@ app.add_middleware(
     timeout_seconds=int(config.get(CONN_TIMEOUT, 30))
 )
 
-register_semaphore = anyio.Semaphore(int(config.get(FLOW_CTL_PARALLEL_REGISTER, 1)))
-query_semaphore = anyio.Semaphore(int(config.get(FLOW_CTL_PARALLEL_QUERY, 10)))
+register_semaphore = anyio.Semaphore(int(config.get(FLOW_CTL_PARALLEL_REGISTER, 50)))
+query_semaphore = anyio.Semaphore(int(config.get(FLOW_CTL_PARALLEL_QUERY, 100)))
+update_semaphore = anyio.Semaphore(int(config.get(FLOW_CTL_PARALLEL_UPDATE, 100)))
+get_semaphore = anyio.Semaphore(int(config.get(FLOW_CTL_PARALLEL_GET, 100)))
+retrieve_semaphore = anyio.Semaphore(int(config.get(FLOW_CTL_PARALLEL_RETRIEVE, 100)))
+deregister_semaphore = anyio.Semaphore(int(config.get(FLOW_CTL_PARALLEL_DEREGISTER, 50)))
+jwk_semaphore = anyio.Semaphore(int(config.get(FLOW_CTL_PARALLEL_JWK, 1)))
 
 
 # ---------- Middleware ----------
@@ -221,7 +248,6 @@ async def _check_duplicate_agent(agent: ValidatedAgentCard, registry: RegistryCo
 
 async def _perform_registration(
         agent: ValidatedAgentCard,
-        registry: RegistryCore,
         client_ip: str,
         details: dict,
 ) -> bool:
@@ -266,6 +292,53 @@ async def _perform_registration(
             detail="Internal server error",
         ) from e
 
+async def _perform_update(
+        client_ip: str,
+        name:str,
+        organization:str,
+        data: dict,
+        details:dict
+) -> bool:
+    """执行实际的更新操作，处理可能的 ValueError 和其他异常，并记录对应日志。"""
+    try:
+        update_handle = HandlerRegistry.get_handler(InterfaceType.UPDATE)
+        success = await update_handle.handle(name,organization,data)
+        await audit_handle.handle({
+            "operation_name": OperationName.REGISTER_AGENT,
+            "level": LogLevel.MINOR,
+            "result": OperationResult.SUCCESS,
+            "object_name": OperatorObject.AGENT,
+            "details": data,
+            "client_ip": client_ip
+        })
+        return success
+    except ValueError as e:
+        details["message"] = str(e)
+        await audit_handle.handle({
+            "operation_name": OperationName.REGISTER_AGENT,
+            "level": LogLevel.MINOR,
+            "result": OperationResult.FAILURE,
+            "object_name": OperatorObject.AGENT,
+            "details": details,
+            "client_ip": client_ip
+        })
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST, detail=str(e)
+        ) from e
+    except Exception as e:
+        await audit_handle.handle({
+            "operation_name": OperationName.REGISTER_AGENT,
+            "level": LogLevel.MINOR,
+            "result": OperationResult.FAILURE,
+            "object_name": OperatorObject.AGENT,
+            "details": details,
+            "client_ip": client_ip
+        })
+        logger.error(f"Unexpected error in update: {e}")
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail="Internal server error",
+        ) from e
 
 @app.post(
     "/rest/a2a-t/v1/agents/register",
@@ -308,7 +381,7 @@ async def register_agent(
         acquired = True
         await _check_agent_limit(registry, client_ip, details)
         await _check_duplicate_agent(agent, registry, client_ip, details)
-        result = await _perform_registration(agent, registry, client_ip, details)
+        result = await _perform_registration(agent, client_ip, details)
         return JSONResponse(
             content=result,
             status_code=status.HTTP_201_CREATED,
@@ -329,7 +402,7 @@ async def list_agents_exact(
         request: Request,
         name: Optional[str] = Query(None, description="Exact agent name"),
         organization: Optional[str] = Query(None, description="Exact organization"),
-        registry: RegistryCore = Depends(get_registry), _: Any = Depends(RateLimiter('query')),
+        _: Any = Depends(RateLimiter('query')),
 ):
     """
     Search agents by exact fields (AND combination).
@@ -358,6 +431,156 @@ async def list_agents_exact(
         if acquired:
             query_semaphore.release()
 
+
+@app.put("/rest/a2a-t/v1/update_agent/{name}", response_model=bool, summary="Full update(replace) an agent")
+async def update_agent(
+        request: Request,
+        name: str,
+        organization: str,
+        agent_data: ValidatedAgentCard,
+        registry: RegistryCore = Depends(get_registry),  _: Any = Depends(RateLimiter('update'))
+):
+    """
+    Fully replace an existing agent. The name and organization in the body must match the path/query.
+    Returns True if updated, False if not found.
+    """
+    client_ip = request.client.host
+    details = {
+        "agentName": agent_data.name,
+        "organization": agent_data.provider.organization,
+        "url": agent_data.provider.url,
+    }
+    authenticate_handle = HandlerRegistry.get_handler(InterfaceType.AUTHENTICATE)
+    await authenticate_handle.handle(client_ip, request)
+    acquired = False
+    try:
+        # Convert to dict for update
+        update_semaphore.acquire_nowait()
+        acquired = True
+
+        await _check_agent_limit(registry, client_ip, details)
+
+        data = agent_data.model_dump()
+        success = await _perform_update(client_ip,name, organization, data,details)
+        if not success:
+            raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Agent not found")
+        return success
+    except ValueError as e:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(e)) from e
+    except Exception as e:
+        logger.error(f"Unexpected error in full update:{e}")
+        raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail="Internal server error") from e
+    finally:
+        if acquired:
+            update_semaphore.release()
+
+@app.delete("/rest/a2a-t/v1/deregister_agent/{name}", response_model=bool, summary="Deregister an agent")
+async def deregister_agent(
+        request: Request,
+        name: str = Path(..., description="Agent name"),
+        organization: str = Query(..., description="Agent organization"),
+        _: Any = Depends(RateLimiter('deregister'))
+):
+    """
+    Remove an agent from the registry.
+    Returns True if deleted, False if not found.
+    """
+    client_ip = request.client.host
+    authenticate_handle = HandlerRegistry.get_handler(InterfaceType.AUTHENTICATE)
+    await authenticate_handle.handle(client_ip, request)
+    acquired = False
+    try:
+        deregister_semaphore.acquire_nowait()
+        acquired = True
+        try:
+            deregister_handle = HandlerRegistry.get_handler(InterfaceType.DEREGISTER)
+            agents = await deregister_handle.handle(name, organization)
+            return agents
+        except Exception as e:
+            logger.error(f"Error in exact search: {e}")
+            raise HTTPException(
+                status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+                detail="Internal server error",
+            ) from e
+
+        success = registry.deregister(name, organization)
+        if not success:
+            raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Agent not found")
+        return success
+    except anyio.WouldBlock as e:
+        raise HTTPException(status.HTTP_503_SERVICE_UNAVAILABLE, "Server is busy") from e
+    finally:
+        if acquired:
+            deregister_semaphore.release()
+
+@app.get("/rest/a2a-t/v1/agents/retrieve", response_model=List[AgentCard], summary="Fuzzy retrieve by task")
+async def retrieve_agents_by_task(
+        request: Request,
+        task: str = Query(..., description="Natural language task description"),
+        top_n: int = 10,
+        _: Any = Depends(RateLimiter('retrieve'))
+):
+    """
+    Find agents that are semantically relevant to the given task using LLM.
+    """
+    """
+    Search a single agent by its unique key(name and organization).
+    """
+    client_ip = request.client.host
+    authenticate_handle = HandlerRegistry.get_handler(InterfaceType.AUTHENTICATE)
+    await authenticate_handle.handle(client_ip, request)
+    acquired = False
+    try:
+        retrieve_semaphore.acquire_nowait()
+        acquired = True
+        try:
+            retrieve_handle = HandlerRegistry.get_handler(InterfaceType.RETRIEVE)
+            agents = await retrieve_handle.handle(task,top_n)
+            return agents
+        except Exception as e:
+            logger.error(f"Error in exact search: {e}")
+            raise HTTPException(
+                status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+                detail="Internal server error",
+            ) from e
+    except anyio.WouldBlock as e:
+        raise HTTPException(status.HTTP_503_SERVICE_UNAVAILABLE, "Server is busy") from e
+    finally:
+        if acquired:
+            retrieve_semaphore.release()
+
+
+@app.get("/rest/a2a-t/v1/agents/{name}", response_model=AgentCard | None, summary="Get agent by exact name and organization")
+async def get_agent(
+        request: Request,
+        name: str,
+        organization: str, _: Any = Depends(RateLimiter('get'))
+):
+    """
+    Search a single agent by its unique key(name and organization).
+    """
+    client_ip = request.client.host
+    authenticate_handle = HandlerRegistry.get_handler(InterfaceType.AUTHENTICATE)
+    await authenticate_handle.handle(client_ip, request)
+    acquired = False
+    try:
+        get_semaphore.acquire_nowait()
+        acquired = True
+        try:
+            get_handle = HandlerRegistry.get_handler(InterfaceType.GET)
+            agents = await get_handle.handle(name, organization)
+            return agents
+        except Exception as e:
+            logger.error(f"Error in exact search: {e}")
+            raise HTTPException(
+                status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+                detail="Internal server error",
+            ) from e
+    except anyio.WouldBlock as e:
+        raise HTTPException(status.HTTP_503_SERVICE_UNAVAILABLE, "Server is busy") from e
+    finally:
+        if acquired:
+            get_semaphore.release()
 
 def _make_agent_key(name: str, organization: str) -> Tuple[str, str]:
     """Create a normalized key for indexing."""
