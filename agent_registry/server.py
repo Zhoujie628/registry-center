@@ -351,7 +351,7 @@ async def list_agents_exact(
         try:
             query_handle = HandlerRegistry.get_handler(InterfaceType.QUERY)
             agents = await query_handle.handle(name, organization)
-            return [MessageToDict(card) for card in agents]
+            return [MessageToDict(card, preserving_proto_field_name=True) for card in agents]
         except Exception as e:
             logger.error(f"Error in exact search: {e}")
             raise HTTPException(
