@@ -9,6 +9,9 @@ def validate_password_complexity(password: str) -> tuple[bool, str]:
     lower_pattern = re.compile(r'[a-z]')
     special_pattern = re.compile(r'[`~!@#$%^&*()_=+|\[\{\}\];:\'",<.>/? -]')
 
+    if len(password) == 0:
+        return False, f"口令为空"
+
     if len(password) < min_length:
         return False, f"至少{min_length}个字符"
 
