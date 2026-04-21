@@ -1,7 +1,7 @@
 {
-  "milvus": {
-    "description": "Milvus DB Service",
-    "uri": "./milvus_demo.db",
-    "version": "milvus-lite"
+  "custom_vector_db": {
+    "description": "Custom Vector Database Service",
+    "uri": "http://{IP}:{Port}",
+    "version": "0.0"
   }
 }

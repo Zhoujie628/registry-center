@@ -18,10 +18,10 @@ conf = get_conf()
 use_vector_db = str(conf.get("use_vectordb", False)).lower() == 'true'
 
 if use_vector_db:
-    from common.vector_db.embedding_model.bge_large_zh_tool import BgeLargeEmbeddingTool
-    from common.vector_db.vector_db_client.milvus_client import MilvusDBClient
-    __all__ = ["MilvusDBClient", "BgeLargeEmbeddingTool"]
+    from common.vector_db.embedding_model.bge_m3_embedding_tool import BgeM3EmbeddingTool
+    from common.vector_db.vector_db_client.custom_vdb_client import CustomVDBClient
+    __all__ = ["CustomVDBClient", "BgeM3EmbeddingTool"]
 else:
-    BgeLargeEmbeddingTool = None
-    MilvusDBClient = None
+    BgeM3EmbeddingTool = None
+    CustomVDBClient = None
     __all__ = []
