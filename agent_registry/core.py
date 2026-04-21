@@ -47,7 +47,7 @@ class RegistryCore:
         if use_vectordb:
             self.vectordb = get_or_create_vectordb_tool_instance(get_vectordb_config_by_type(VectorDBType.Milvus))
             self.embedding_tool = get_or_create_embedding_tool_instance(
-                get_embedding_config_by_type(EmbeddingType.BGELargeZH))
+                get_embedding_config_by_type(EmbeddingType.BGEM3))
         else:
             data_path = Path(get_root_path()) / "data"
             data_path.mkdir(exist_ok=True)
