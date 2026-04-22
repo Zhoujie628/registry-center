@@ -51,7 +51,7 @@ class AuthenticateHandler(BaseHandler):
 class InsertHandler(BaseHandler):
 
     async def handle(self, *args, **kwargs):
-        return await get_registry().register(*args)
+        return get_registry().register(*args)
 
 
 class QueryHandler(BaseHandler):

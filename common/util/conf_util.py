@@ -70,5 +70,42 @@ def set_ssl_folder_permissions():
             os.chmod(file_path, stat.S_IRUSR | stat.S_IWUSR)
 
 
+from common.util.config_util import get_root_path
+
+
+def get_persistence_conf() -> dict:
+    """
+    Read persistence configuration file with environment variable substitution.
+    Decrypt database password if present.
+    """
+    root_path = get_root_path()
+    persistence_conf_path = os.path.join(root_path, "etc", "conf", "persistence.conf")
+    conf = load_conf_as_dict(persistence_conf_path)
+    conf = _resolve_env_vars(conf)
+    if 'postgresql.password' in conf and conf['postgresql.password']:
+        from common.util.cipher_util import decrypt
+        decrypted = decrypt(conf['postgresql.password'])
+        conf['postgresql.password'] = decrypted.decode('utf-8') if isinstance(decrypted, bytes) else decrypted
+    return conf
+
+
+def _resolve_env_vars(conf: dict) -> dict:
+    """
+    Resolve environment variables in config values.
+    Format: ${ENV_VAR:default_value}
+    """
+    import re
+    resolved = {}
+    for key, value in conf.items():
+        if isinstance(value, str):
+            pattern = r'\$\{([^}:]+)(?:([^}]*))?\}'
+            matches = re.findall(pattern, value)
+            for env_var, default in matches:
+                env_value = os.environ.get(env_var, default.lstrip(':') if default else '')
+                value = value.replace(f'${{{env_var}{default}}}', env_value)
+        resolved[key] = value
+    return resolved
+
+
 # 单例对象
 conf_singleton_obj = load_conf_obj(CONFIG_FILE_PATH)

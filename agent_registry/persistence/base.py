@@ -1,0 +1,62 @@
+# Copyright (c) 2026 Huawei Technologies Co., Ltd.
+# All Rights Reserved.
+#
+#    Licensed under the Apache License, Version 2.0 (the "License"); you may
+#    not use this file except in compliance with the License. You may obtain
+#    a copy of the License at
+#
+#         http://www.apache.org/licenses/LICENSE-2.0
+#
+#    Unless required by applicable law or agreed to in writing, software
+#    distributed under the License is distributed on an "AS IS" BASIS, WITHOUT
+#    WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied. See the
+#    License for the specific language governing permissions and limitations
+#    under the License.
+
+from abc import ABC, abstractmethod
+from typing import List, Optional, Dict, Any
+
+from a2a.types import AgentCard
+
+
+class StorageBackend(ABC):
+    @classmethod
+    @abstractmethod
+    def init(cls, config: dict) -> 'StorageBackend':
+        pass
+
+    @abstractmethod
+    def create(self, agent: AgentCard) -> bool:
+        pass
+
+    @abstractmethod
+    def find_by_key(self, name: str, organization: str) -> Optional[AgentCard]:
+        pass
+
+    @abstractmethod
+    def find_by_name(self, name: str) -> List[AgentCard]:
+        pass
+
+    @abstractmethod
+    def find_by_organization(self, organization: str) -> List[AgentCard]:
+        pass
+
+    @abstractmethod
+    def find_all(self) -> List[AgentCard]:
+        pass
+
+    @abstractmethod
+    def update(self, name: str, organization: str, agent_data: Dict[str, Any]) -> bool:
+        pass
+
+    @abstractmethod
+    def delete(self, name: str, organization: str) -> bool:
+        pass
+
+    @abstractmethod
+    def count(self) -> int:
+        pass
+
+    @abstractmethod
+    def close(self):
+        pass

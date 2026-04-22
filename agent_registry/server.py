@@ -45,7 +45,7 @@ from agent_registry.config import (
 )
 from agent_registry.core import RegistryCore
 from agent_registry.model.validated_agentcard import validate_agent_card
-from agent_registry.registry_instance import get_registry
+from agent_registry.registry_instance import get_registry, initialize_registry
 from agent_registry.middleware import ConnectionLimitMiddleware, TimeoutMiddleware
 
 from common.custom.custom_handle import HandlerRegistry
@@ -581,6 +581,15 @@ async def get_agent(
     finally:
         if acquired:
             get_semaphore.release()
+
+
+def close_registry():
+    registry = get_registry()
+    registry.close()
+
+
+app.add_event_handler("startup", initialize_registry)
+app.add_event_handler("shutdown", close_registry)
 
 
 def _make_agent_key(name: str, organization: str) -> Tuple[str, str]:

@@ -14,17 +14,20 @@ class InitCommand:
     def __init__(self):
         self.root_path = get_root_path()
         self.config_file = os.path.join(self.root_path, "etc", "conf", "server.conf")
-        self.existing_config = self._load_existing_config()
+        self.persistence_config_file = os.path.join(self.root_path, "etc", "conf", "persistence.conf")
+        self.existing_config = self._parse_config_file(self.config_file)
+        self.existing_persistence_config = self._parse_config_file(self.persistence_config_file)
 
-    def _load_existing_config(self) -> dict:
+    def _parse_config_file(self, file_path: str) -> dict:
         config = {}
-        if os.path.exists(self.config_file):
-            with open(self.config_file, 'r', encoding='utf-8') as f:
-                for line in f:
-                    line = line.strip()
-                    if line and '=' in line:
-                        key, _, value = line.partition('=')
-                        config[key.strip()] = value.strip()
+        if not os.path.exists(file_path):
+            return config
+        with open(file_path, 'r', encoding='utf-8') as f:
+            for line in f:
+                line = line.strip()
+                if line and '=' in line and not line.startswith('#'):
+                    key, _, value = line.partition('=')
+                    config[key.strip()] = value.strip()
         return config
 
     def init_command(self):
@@ -70,6 +73,12 @@ class InitCommand:
             config['signature_validation_enabled'] = default_signature
 
         self.save_config_to_file(config)
+
+        print("\n" + "=" * 50)
+        print("持久化存储配置")
+        print("=" * 50)
+        persistence_config = self.config_persistence()
+        self.save_persistence_config_to_file(persistence_config)
 
         print(f"\n配置已完成，已保存在 {self.config_file}")
         print("您可以使用 './start.sh' 启动服务")
@@ -282,6 +291,74 @@ class InitCommand:
                 f.write(f"{key}={value}\n")
 
         os.chmod(self.config_file, 0o600)
+
+    def config_persistence(self) -> dict:
+        config = {}
+
+        default_mode = self.existing_persistence_config.get('persistence.mode', 'file')
+        mode_input = input(
+            f"\n请选择存储模式 persistence.mode (file/postgresql, 默认: {default_mode}): "
+        ).strip()
+        config['persistence.mode'] = mode_input or default_mode
+
+        if config['persistence.mode'] == 'postgresql':
+            print("\n配置 PostgreSQL 数据库连接：")
+            default_host = self.existing_persistence_config.get('postgresql.host', 'localhost')
+            host_input = input(f"请输入数据库主机 postgresql.host (默认: {default_host}): ").strip()
+            config['postgresql.host'] = host_input or default_host
+
+            default_port = self.existing_persistence_config.get('postgresql.port', '5432')
+            port_input = input(f"请输入数据库端口 postgresql.port (默认: {default_port}): ").strip()
+            config['postgresql.port'] = port_input or default_port
+
+            default_name = self.existing_persistence_config.get('postgresql.name', 'a2a_registry')
+            name_input = input(f"请输入数据库名称 postgresql.name (默认: {default_name}): ").strip()
+            config['postgresql.name'] = name_input or default_name
+
+            default_username = self.existing_persistence_config.get('postgresql.username', 'a2a_user')
+            username_input = input(f"请输入数据库用户 postgresql.username (默认: {default_username}): ").strip()
+            config['postgresql.username'] = username_input or default_username
+
+            password_input = input(f"请输入数据库口令 postgresql.password: ").strip()
+            if password_input:
+                config['postgresql.password'] = encrypt(password_input)
+            else:
+                config['postgresql.password'] = self.existing_persistence_config.get('postgresql.password', '')
+
+        return config
+
+    def _get_persistence_config_header(self) -> str:
+        return """# Copyright (c) 2026 Huawei Technologies Co., Ltd.
+# All Rights Reserved.
+#
+#    Licensed under the Apache License, Version 2.0 (the "License"); you may
+#    not use this file except in compliance with the License. You may obtain
+#    a copy of the License at
+#
+#         http://www.apache.org/licenses/LICENSE-2.0
+#
+#    Unless required by applicable law or agreed to in writing, software
+#    distributed under the License is distributed on an "AS IS" BASIS, WITHOUT
+#    WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied. See the
+#    License for the specific language governing permissions and limitations
+#    under the License.
+
+# 持久化模式：file / postgresql / sqlite / gauss
+"""
+
+    def save_persistence_config_to_file(self, config: dict):
+        config_dir = os.path.dirname(self.persistence_config_file)
+        os.makedirs(config_dir, exist_ok=True)
+
+        existing_config = self._parse_config_file(self.persistence_config_file)
+        existing_config.update(config)
+
+        with open(self.persistence_config_file, 'w', encoding='utf-8') as f:
+            f.write(self._get_persistence_config_header())
+            for key, value in existing_config.items():
+                f.write(f"{key}={value}\n")
+
+        os.chmod(self.persistence_config_file, 0o600)
 
 
 def main():

@@ -13,8 +13,10 @@
 #    License for the specific language governing permissions and limitations
 #    under the License.
 from common.util.config_util import get_conf
+from common.util.conf_util import get_persistence_conf
 
-# agent_registry/config.py
+PERSISTENCE_CONF = get_persistence_conf()
+PERSISTENCE_MODE = PERSISTENCE_CONF.get("persistence.mode", "file")
 PERSISTENCE_FILE = "agentcard.json"
 USE_VECTORDB = str(get_conf().get("use_vectordb", False)).lower() == 'true'
 COLLECTION_NAME = "agent_card_collection"
