@@ -29,9 +29,9 @@ from agent_registry.persistence import save_to_file, load_from_file
 from agent_registry.persistence import StorageRegistry, StorageBackend
 from agent_registry.prompts import build_agent_selection_prompt
 from common.llm import get_llm_instance
+from common.llm.config.llm_config import get_llm_config_by_type, LLMType
+from common.llm.provider.llm_provider_registry import get_or_create_llm_instance
 from common.util.config_util import get_root_path
-from common.vector_db.embedding_model.config.embedding_config import get_embedding_config_by_type, EmbeddingType
-from common.vector_db.embedding_model.config.embedding_tool_registry import get_or_create_embedding_tool_instance
 from common.vector_db.vector_db_client.config.vector_db_client_registry import get_or_create_vectordb_tool_instance
 from common.vector_db.vector_db_client.config.vector_db_config import VectorDBType, get_vectordb_config_by_type
 
@@ -54,8 +54,8 @@ class RegistryCore:
 
         if use_vectordb:
             self.vectordb = get_or_create_vectordb_tool_instance(get_vectordb_config_by_type(VectorDBType.Milvus))
-            self.embedding_tool = get_or_create_embedding_tool_instance(
-                get_embedding_config_by_type(EmbeddingType.BGEM3))
+            self.embedding_tool = get_or_create_llm_instance(
+                get_llm_config_by_type(LLMType.AOC_EMBEDDING_LLM))
         elif persistence_mode == 'postgresql':
             self.storage = StorageRegistry.get_backend(self.persistence_mode, self.persistence_conf)
             logger.info(f"Registry initialized with {self.persistence_mode} storage")
@@ -92,7 +92,7 @@ class RegistryCore:
         with self._lock:
             if use_vectordb:
                 entity_str = json.dumps(MessageToDict(agent, preserving_proto_field_name=True))
-                embedding = self.embedding_tool.get_embedding_vector(agent.description)
+                embedding = self.embedding_tool.embed(agent.description)
                 id = self._make_id(agent.name, agent.provider.organization)
                 insert_entity = {"embedding": embedding, "id": id, "name": agent.name, "description": agent.description,
                                  "organization": agent.provider.organization, "agent_card": entity_str}
@@ -157,7 +157,7 @@ class RegistryCore:
         """
         if use_vectordb:
             entity_str = json.dumps(agent_data)
-            embedding = self.embedding_tool.get_embedding_vector(agent_data["description"])
+            embedding = self.embedding_tool.embed(agent_data["description"])
             key = self._make_id(agent_data["name"], agent_data["provider"]["organization"])
             insert_entity = {"id": key, "embedding": embedding, "name": agent_data["name"],
                              "description": agent_data["description"],
@@ -215,7 +215,7 @@ class RegistryCore:
         agents_info = []
         if use_vectordb:
             retrieve_entity = {"collection_name": COLLECTION_NAME,
-                               "embedding": self.embedding_tool.get_embedding_vector(task),
+                               "embedding": self.embedding_tool.embed(task),
                                "top_n": top_n}
             retrieve_results = self.vectordb.retrieve_entity(retrieve_entity)
             for agent in retrieve_results:
