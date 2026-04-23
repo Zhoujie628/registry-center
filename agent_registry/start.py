@@ -160,8 +160,4 @@ def main():
 
 
 if __name__ == "__main__":
-    # main():q:q
-    llm = get_llm_instance()
-    a, b = llm.ask_llm("今天天气如何？")
-    print(a)
-    print(b)
+    main()
