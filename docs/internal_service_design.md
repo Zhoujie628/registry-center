@@ -13,7 +13,7 @@
 - 用户可通过`python -m agent_registry.init`命令配置审核开关的开启状态
 - 审核开关配置写入`etc/conf/server.conf`文件
 - 审核开关开启后可以关闭，但需检查是否存在"已注册"状态的Agent
-- 若存在"已注册"状态的Agent，则报错提醒用户先发布这些Agent
+- 若存在"已注册"状态的Agent，则报错提醒用户先发布或删除这些Agent
 - 若不存在"已注册"状态的Agent，则成功关闭审核开关
 
 #### 需求2：Agent状态管理
@@ -29,7 +29,7 @@
 
 - 通过UDS(Unix Domain Socket)实现内部交互能力
 - 统一的socket入口，支持多种内部操作
-- 通过target字段区分不同操作类型
+- 通过action字段区分不同操作类型
 - 当前支持操作：审核(approval)、后续可扩展更多操作
 
 ### 1.3 设计原则
@@ -139,7 +139,7 @@ if has_registered_agents():
     
     建议：
     1. 先通过审核接口发布所有"已注册"状态的Agent
-    2. 或通过注销接口移除不需要的Agent
+    2. 或通过注销接口删除不需要的Agent
     3. 处理完毕后再关闭审核功能
 else:
     # 系统允许关闭：
@@ -360,9 +360,9 @@ async def list_agents(name: Optional[str] = None, organization: Optional[str] = 
 
 采用统一socket + Handler分发模式，类似Docker的设计：
 
-- 单一socket入口：通过systemd的RuntimeDirectory配置，socket文件名为`internal.sock`
-- Socket路径：`/run/registry-center/internal.sock`（由RuntimeDirectory=registry-center自动创建）
-- 所有内部操作通过target字段区分
+- 单一socket入口：socket文件存放在项目目录下
+- Socket路径：`run/registry-center/internal.sock`（项目根目录下的相对路径）
+- 所有内部操作通过action字段区分
 - Handler模式处理不同操作
 - 易于扩展新功能
 
@@ -372,11 +372,11 @@ async def list_agents(name: Optional[str] = None, organization: Optional[str] = 
 ┌─────────────────────────────────────────┐
 │ RegistryCenterService (统一服务)          │
 │                                         │
-│  监听：/run/registry-center/internal.sock │
+│  监听：run/registry-center/internal.sock │
 │                                         │
 │  ┌─────────────────────────────────┐   │
 │  │ 请求分发器        │   │
-│  │ 根据target分发到不同handler        │   │
+│  │ 根据action分发到不同handler         │   │
 │  └─────────────┬───────────────────┘   │
 │                │                        │
 │      ┌─────────┴─────────┬──────┬─────┐│
@@ -397,28 +397,23 @@ async def list_agents(name: Optional[str] = None, organization: Optional[str] = 
 │                  │
 │ 发送请求：         │
 │ {                │
-│  "target":"approval",│ ← target字段区分操作
-│  "agent_name":"X",│
-│  "organization":"Y"│
+│  "action":"approval",│ ← action字段区分操作
+│  "params": {     │ ← params封装请求参数
+│    "agent_name":"X",│
+│    "organization":"Y"│
+│  }               │
 │ }                │
 └──────────────────┘
 ```
 
 #### 2.4.2 协议设计
 
-**UDS Socket路径：** `/run/registry-center/internal.sock`
+**UDS Socket路径：** `run/registry-center/internal.sock`
 
-**Socket路径配置方式：**
-
-通过systemd的`.service`文件配置：
-
-```ini
-# etc/systemd/registry-center.service
-[Service]
-RuntimeDirectory=registry-center
-# systemd会自动创建 /run/registry-center/ 目录
-# socket文件存放在此目录下：internal.sock
-```
+**Socket路径说明：**
+- socket文件存放在项目根目录下的`run/registry-center/`目录
+- 启动时自动创建该目录（如果不存在）
+- socket文件权限设置为`0o660`（rw-rw----）
 
 **接口协议：** JSON over UDS
 
@@ -426,9 +421,11 @@ RuntimeDirectory=registry-center
 
 ```json
 {
-  "target": "approval",        // 操作类型
-  "agent_name": "TestAgent", // Agent名称
-  "organization": "TestOrg"  // 组织名称
+  "action": "approval",        // 操作类型
+  "params": {                  // 请求参数（不同操作有不同的参数）
+    "agent_name": "TestAgent", // Agent名称
+    "organization": "TestOrg"  // 组织名称
+  }
 }
 ```
 
@@ -446,9 +443,9 @@ RuntimeDirectory=registry-center
 }
 ```
 
-**支持的操作类型（target）：**
+**支持的操作类型（action）：**
 
-| target | 说明 | 参数 |
+| action | 说明 | 参数 |
 |--------|------|------|
 | `approval` | 审核Agent | agent_name, organization |
 | `config` | 配置管理 | config_key, config_value |
@@ -473,7 +470,7 @@ RuntimeDirectory=registry-center
 │                                         │
 │ 子线程：UDS服务                          │
 │ ├─ RegistryCenterService.start()        │
-│ ├─ 监听：/run/registry-center/internal.sock │
+│ ├─ 监听：run/registry-center/internal.sock │
 │ └─ 处理内部交互请求                       │
 │                                         │
 │ 共享资源：                                │
@@ -489,7 +486,7 @@ RuntimeDirectory=registry-center
 2. **无数据同步**：直接访问共享内存，无需IPC
 3. **配置统一**：所有配置在同一文件
 4. **管理简单**：只需启动/停止一个进程
-5. **Socket路径由systemd管理**：通过RuntimeDirectory自动创建运行目录
+5. **Socket路径在项目目录**：`run/registry-center/internal.sock`
 
 #### 2.4.4 文件结构
 
@@ -504,7 +501,7 @@ agent_registry/
 │   ├── handlers/                 # 操作处理器
 │   │   ├── __init__.py
 │   │   ├── base_handler.py       # Handler基类
-│   │   ├── approval_handler.py      # 审核处理器
+│   │   ├── approval_handler.py   # 审核处理器
 │   │   ├── config_handler.py     # 配置处理器
 │   │   ├── stats_handler.py      # 统计处理器
 │   │   ├── query_handler.py      # 查询处理器
@@ -519,7 +516,7 @@ agent_registry/
 │       ├── __init__.py
 │       ├── request.py            # 请求协议
 │       ├── response.py           # 响应协议
-│       └── targets.py            # target定义
+│       └── actions.py            # action定义
 ```
 
 **服务端代码结构：**
@@ -528,7 +525,7 @@ agent_registry/
 class RegistryCenterService:
     """注册中心内部交互UDS服务（统一入口）"""
     
-    SOCKET_PATH = "/run/registry-center/internal.sock"
+    SOCKET_PATH = "run/registry-center/internal.sock"
     
     def __init__(self):
         self.socket_path = self.SOCKET_PATH
@@ -569,18 +566,19 @@ class RegistryCenterService:
             data = conn.recv(4096)
             request = json.loads(data)
             
-            # 获取target
-            target = request.get('target', '')
+            # 获取action
+            action = request.get('action', '')
+            params = request.get('params', {})
             
             # 分发到对应Handler
-            handler = self.dispatcher.get_handler(target)
+            handler = self.dispatcher.get_handler(action)
             if not handler:
                 response = {
                     "success": False,
-                    "error": f"Unknown target: {target}"
+                    "error": f"Unknown action: {action}"
                 }
             else:
-                response = handler.handle(request, self.registry, self.config)
+                response = handler.handle(params, self.registry, self.config)
             
             conn.send(json.dumps(response).encode())
         finally:
@@ -595,7 +593,7 @@ class RegistryCenterService:
 class RegistryClient:
     """注册中心内部交互客户端"""
     
-    SOCKET_PATH = "/run/registry-center/internal.sock"
+    SOCKET_PATH = "run/registry-center/internal.sock"
     
     def __init__(self):
         self.socket_path = self.SOCKET_PATH
@@ -626,34 +624,42 @@ class RegistryClient:
     def approval_agent(self, agent_name: str, organization: str) -> dict:
         """审核Agent"""
         request = {
-            "target": "approval",
-            "agent_name": agent_name,
-            "organization": organization
+            "action": "approval",
+            "params": {
+                "agent_name": agent_name,
+                "organization": organization
+            }
         }
         return self._send_request(request)
     
     def get_config(self, config_key: str) -> dict:
         """获取配置"""
         request = {
-            "target": "config",
-            "config_key": config_key
+            "action": "config",
+            "params": {
+                "config_key": config_key
+            }
         }
         return self._send_request(request)
     
     def get_stats(self, stat_type: str) -> dict:
         """获取统计信息"""
         request = {
-            "target": "stats",
-            "type": stat_type
+            "action": "stats",
+            "params": {
+                "type": stat_type
+            }
         }
         return self._send_request(request)
     
     def query_agent(self, agent_name: str, organization: str) -> dict:
         """查询Agent"""
         request = {
-            "target": "query",
-            "agent_name": agent_name,
-            "organization": organization
+            "action": "query",
+            "params": {
+                "agent_name": agent_name,
+                "organization": organization
+            }
         }
         return self._send_request(request)
 ```
@@ -664,10 +670,10 @@ class RegistryClient:
 
 ```bash
 # Socket文件权限
-ls -la /run/registry-center/internal.sock
+ls -la run/registry-center/internal.sock
 
 # 输出：
-srw-rw---- 1 root registry_group 0 Jan 1 12:00 /run/registry-center/internal.sock
+srw-rw---- 1 root registry_group 0 Jan 1 12:00 run/registry-center/internal.sock
 ```
 
 **权限说明：**
@@ -691,7 +697,7 @@ srw-rw---- 1 root registry_group 0 Jan 1 12:00 /run/registry-center/internal.soc
            ▼
 ┌─────────────────────────────────┐
 │  连接UDS Socket                  │
-│  /run/registry-center/internal.sock │
+│  run/registry-center/internal.sock │
 └──────────┬──────────────────────┘
            │
            ▼
@@ -713,7 +719,7 @@ srw-rw---- 1 root registry_group 0 Jan 1 12:00 /run/registry-center/internal.soc
       ▼
 ┌─────────────────────────────────┐
 │  发送请求                         │
-│  {"target":"approval", ...}         │
+│  {"action":"approval", "params":{...}} │
 └──────────┬──────────────────────┘
            │
            ▼
@@ -826,7 +832,7 @@ agent_registry/
 │       ├── __init__.py
 │       ├── request.py            # 请求协议
 │       ├── response.py           # 响应协议
-│       └── targets.py            # target定义
+│       └── actions.py            # action定义
 ```
 
 #### 3.1.2 修改文件
@@ -838,13 +844,9 @@ agent_registry/
 ├── core.py                   # 新增状态管理方法
 ├── start.py                  # 启动UDS内部交互服务线程
 ├── persistence/
-│   ├── file_storage.py       # 新增status字段处理
+│   ├── file_storage.py       # 新增双文件存储处理
 │   ├── postgresql_storage.py # 新增status字段处理
 │   └── sql_queries.py        # 新增status字段SQL
-├── model/
-│   └── validated_agentcard.py  # 新增status字段验证
-└── etc/systemd/
-│   └── registry-center.service  # 新增RuntimeDirectory配置
 ├── model/
 │   └── validated_agentcard.py  # 新增status字段验证
 ```
@@ -873,7 +875,10 @@ if approval_input == 'n':
         if registered_agents:
             print("❌ 错误：审核功能已开启，不能直接关闭！")
             print(f"   原因：存在 {len(registered_agents)} 个'已注册'状态的Agent")
-            print("   建议：先通过审核接口发布这些Agent，然后再关闭审核功能")
+            print("   建议：")
+            print("   1. 先通过审核接口发布这些Agent")
+            print("   2. 或通过注销接口删除这些Agent")
+            print("   3. 处理完毕后再关闭审核功能")
             sys.exit(1)
         else:
             # 不存在已注册Agent，允许关闭
@@ -920,7 +925,7 @@ async def register_agent(agent: ValidatedAgentCard, request: Request):
     )
 ```
 
-修改查询接口，只返回已发布状态的Agent：
+修改查询接口，只返回已发布状态的Agent（响应体不包含status字段）：
 
 ```python
 @app.get("/rest/a2a-t/v1/agents/{name}")
@@ -931,7 +936,8 @@ async def get_agent(name: str, organization: str):
     if agent and agent.status != 'published':
         raise HTTPException(status_code=404, detail="Agent not found or not published")
     
-    return agent
+    # 返回Agent数据，不包含status字段（保持业界标准）
+    return MessageToDict(agent, preserving_proto_field_name=True)
 
 @app.get("/rest/a2a-t/v1/agents/query")
 async def list_agents(name: Optional[str] = None, organization: Optional[str] = None):
@@ -946,7 +952,8 @@ async def list_agents(name: Optional[str] = None, organization: Optional[str] = 
     # 只返回已发布状态的Agent
     agents = [a for a in agents if a.status == 'published']
     
-    return agents
+    # 返回Agent数据列表，不包含status字段（保持业界标准）
+    return [MessageToDict(a, preserving_proto_field_name=True) for a in agents]
 ```
 
 #### 3.2.3 core.py修改
@@ -1031,51 +1038,15 @@ def main():
     internal_thread = threading.Thread(target=internal_service.start, daemon=True)
     internal_thread.start()
     
-    logger.info("Internal service started on UDS socket: /run/registry-center/internal.sock")
+    logger.info("Internal service started on UDS socket: run/registry-center/internal.sock")
     
     # 启动HTTP服务
     ...
 ```
 
-#### 3.2.6 registry-center.service修改
-
-修改systemd服务配置文件，添加RuntimeDirectory配置：
-
-```ini
-# etc/systemd/registry-center.service
-[Unit]
-Description=Registry Center - A2A-T AgentCard Registry
-Documentation=https://github.com/your-org/registry-center
-After=network.target network-online.target
-Wants=network-online.target
-
-[Service]
-Type=simple
-User=root
-Group=root
-WorkingDirectory=/OpenA2A-T/registry-center
-RuntimeDirectory=registry-center  # 新增配置，systemd会自动创建 /run/registry-center/ 目录
-Environment="APP_USER=root"
-Environment="APP_UID=0"
-Environment="APP_GID=0"
-Environment="OPENSSL_CONF=/OpenA2A-T/registry-center/etc/conf/custom_openssl.cnf"
-ExecStart=/usr/bin/python -m agent_registry.start
-ExecStop=/bin/kill -15 $MAINPID
-Restart=on-failure
-RestartSec=5s
-LimitNOFILE=65535
-StandardOutput=journal
-StandardError=journal
-
-[Install]
-WantedBy=multi-user.target
-```
+### 3.3 配置变更示例
 
 **RuntimeDirectory说明：**
-- systemd启动时会在`/run/`目录下创建`registry-center/`子目录
-- socket文件`internal.sock`将存放在`/run/registry-center/`目录下
-- 服务停止时systemd会自动清理该目录
-
 ### 3.3 配置变更示例
 
 #### 3.3.1 审核功能开启后的配置
@@ -1088,7 +1059,7 @@ agent_approval_enabled=true
 **影响：**
 - 新注册的Agent状态为`registered`
 - 需要调用审核接口才能变为`published`
-- UDS内部交互服务启动并监听，可通过`approval` target审核Agent
+- UDS内部交互服务启动并监听，可通过`approval` action审核Agent
 
 #### 3.3.2 审核功能关闭时的配置
 
@@ -1100,7 +1071,7 @@ agent_approval_enabled=false
 **影响：**
 - 新注册的Agent直接为`published`状态
 - UDS内部交互服务仍然启动
-- 调用`approval` target会报错（审核功能关闭）
+- 调用`approval` action会报错（审核功能关闭）
 
 ### 3.4 数据持久化
 
@@ -1114,9 +1085,11 @@ persistence.mode=postgresql
 
 #### 3.4.1 文件存储模式（persistence.mode=file）
 
-**存储文件路径：** `data/agentcard.json`
+**双文件方案说明：**
 
-**Agent数据存储格式：**
+为保持业界AgentCard数据结构标准，防止后续业界更新status字段后与项目本身的status字段冲突，采用双文件存储方案：
+
+**存储文件1：`data/agentcard.json`** - 存放不带status字段的AgentCard数据（符合业界标准）
 
 ```json
 [
@@ -1129,9 +1102,9 @@ persistence.mode=postgresql
     "description": "Test Description",
     "url": "https://agent.test",
     "version": "1.0.0",
-    "status": "registered",  // 新增字段
     "skills": [...],
     ...
+    // 不包含status字段，保持业界标准
   },
   {
     "name": "AnotherAgent",
@@ -1139,18 +1112,110 @@ persistence.mode=postgresql
       "organization": "AnotherOrg",
       "url": "https://another.org"
     },
-    "status": "published",  // 新增字段
     ...
+    // 不包含status字段
   }
 ]
 ```
+
+**存储文件2：`data/agentregistry.json`** - 存放Agent状态映射信息
+
+```json
+[
+  {
+    "organization": "TestOrg",
+    "agent_name": "TestAgent",
+    "status": "registered"
+  },
+  {
+    "organization": "AnotherOrg",
+    "agent_name": "AnotherAgent",
+    "status": "published"
+  }
+]
+```
+
+**文件用途说明：**
+- `agentcard.json`：存储完整的AgentCard数据，不包含status字段，保持业界标准格式
+- `agentregistry.json`：存储Agent的组织名、Agent名和状态映射，用于状态管理
+- 两个文件通过`(organization, agent_name)`组合进行关联
 
 **FileStorage修改要点：**
 
 需要修改`agent_registry/persistence/file_storage.py`：
 
-1. `_save()`方法：保存Agent数据时包含status字段
-2. `_load()`方法：加载Agent数据时处理status字段的兼容性
+1. 新增`agentregistry.json`文件的处理逻辑
+2. `_save()`方法：分别保存AgentCard数据（不含status）到agentcard.json，状态信息到agentregistry.json
+3. `_load()`方法：加载时合并两个文件的数据，恢复Agent的完整状态信息
+4. 注册Agent时：同时更新两个文件
+5. 审核Agent时：只更新agentregistry.json中的status字段
+
+**实现示例：**
+
+```python
+class FileStorage(StorageBackend):
+    def __init__(self, file_path: str, registry_file: str = "data/agentregistry.json"):
+        self.file_path = file_path          # agentcard.json
+        self.registry_file = registry_file  # agentregistry.json
+        self._agents: Dict[tuple, AgentCard] = {}
+        self._status_map: Dict[tuple, str] = {}  # {(name, org): status}
+        self._load()
+    
+    def create(self, agent: AgentCard) -> bool:
+        key = (agent.name.strip(), agent.provider.organization.strip())
+        self._agents[key] = agent
+        self._status_map[key] = agent.status
+        self._save()
+        return True
+    
+    def _save(self) -> None:
+        # 保存agentcard.json（不含status）
+        agent_cards = []
+        for agent in self._agents.values():
+            agent_dict = MessageToDict(agent, preserving_proto_field_name=True)
+            agent_dict.pop('status', None)  # 移除status字段
+            agent_cards.append(agent_dict)
+        
+        with open(self.file_path, 'w', encoding='utf-8') as f:
+            json.dump(agent_cards, f, ensure_ascii=False, indent=2)
+        
+        # 保存agentregistry.json
+        registry_data = []
+        for key, status in self._status_map.items():
+            registry_data.append({
+                "organization": key[1],
+                "agent_name": key[0],
+                "status": status
+            })
+        
+        with open(self.registry_file, 'w', encoding='utf-8') as f:
+            json.dump(registry_data, f, ensure_ascii=False, indent=2)
+    
+    def _load(self) -> None:
+        # 加载agentcard.json
+        if os.path.exists(self.file_path):
+            with open(self.file_path, 'r', encoding='utf-8') as f:
+                agent_cards = json.load(f)
+            for item in agent_cards:
+                agent = AgentCard(**item)
+                key = (agent.name.strip(), agent.provider.organization.strip())
+                self._agents[key] = agent
+        
+        # 加载agentregistry.json并合并状态
+        if os.path.exists(self.registry_file):
+            with open(self.registry_file, 'r', encoding='utf-8') as f:
+                registry_data = json.load(f)
+            for item in registry_data:
+                key = (item['agent_name'], item['organization'])
+                self._status_map[key] = item['status']
+                # 将状态合并到Agent对象
+                if key in self._agents:
+                    self._agents[key].status = item['status']
+        else:
+            # 兼容处理：如果没有agentregistry.json，默认所有Agent为published
+            for key in self._agents.keys():
+                self._status_map[key] = 'published'
+```
 
 #### 3.4.2 数据库存储模式（persistence.mode=postgresql/sqlite/gauss）
 
@@ -1194,29 +1259,6 @@ CREATE INDEX IF NOT EXISTS idx_agent_status ON agent_card(status)
 3. `update()`方法：更新时支持status字段变更
 4. 新增`find_by_status()`方法：按状态查询Agent
 5. 新增`count_by_status()`方法：按状态统计Agent数量
-
-#### 3.4.3 状态兼容性处理
-
-**启动时加载Agent数据：**
-
-```python
-def _load(self):
-    """加载Agent数据"""
-    data_list = load_from_file(self.persistence_file)
-    
-    for item in data_list:
-        try:
-            # 兼容处理：如果没有status字段，默认为published
-            if 'status' not in item:
-                item['status'] = 'published'
-                logger.info(f"Agent {item['name']} missing status, set to published")
-            
-            agent = AgentCard(**item)
-            key = self._make_key(agent.name, agent.provider.organization)
-            self._agents[key] = agent
-        except Exception as e:
-            logger.error(f"Failed to load agent: {e}")
-```
 
 ## 4. 测试方案
 
@@ -1578,22 +1620,25 @@ python -m agent_registry.internal.client.cli_registry stats all
    - HTTP查询接口只返回已发布状态的Agent
 
 3. **UDS内部交互接口**
-   - Socket路径：`/run/registry-center/internal.sock`
-   - 通过systemd的RuntimeDirectory配置运行目录
-   - 统一入口，通过target字段区分操作类型
+   - Socket路径：`run/registry-center/internal.sock`（项目目录）
+   - 统一入口，通过action字段区分操作类型
+   - 请求格式：`{"action": "...", "params": {...}}`
    - 支持approval、config、stats、query等操作
    - 文件权限实现访问控制（registry_group组）
-   - 审核关闭时approval target报错
+   - 审核关闭时approval action报错
 
 4. **持久化存储**
    - 支持文件存储和数据库存储两种模式
    - 由`persistence.conf`中的`persistence.mode`配置控制
-   - 两种存储模式都需要新增status字段
+   - 文件存储采用双文件方案：agentcard.json（不含status）+ agentregistry.json（状态映射）
+   - 双文件方案保持业界AgentCard数据标准，避免status字段冲突
+   - 数据库存储需新增status列
 
 ### 6.2 安全要点
 
 1. **配置安全**
    - 关闭审核功能时需检查是否存在已注册Agent
+   - 若存在已注册Agent，需先发布或删除这些Agent后再关闭
    - 防止配置不一致导致状态混乱
 
 2. **访问控制**
