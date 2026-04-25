@@ -27,48 +27,86 @@ from .base import StorageBackend
 
 
 class FileStorage(StorageBackend):
-    def __init__(self, file_path: str, max_file_size: int = 100 * 1024 * 1024):
+    def __init__(self, file_path: str, registry_file: str = None, max_file_size: int = 100 * 1024 * 1024):
         self.file_path = file_path
+        self.registry_file = registry_file or str(Path(file_path).parent / "agentregistry.json")
         self.max_file_size = max_file_size
         self._agents: Dict[tuple, AgentCard] = {}
+        self._status_map: Dict[tuple, str] = {}
         self._load()
 
     @classmethod
     def init(cls, config: dict) -> 'FileStorage':
         file_path = config.get('file.path', 'data/agentcard.json')
+        registry_file = config.get('registry.file', 'data/agentregistry.json')
         max_file_size = config.get('max_file_size', 100 * 1024 * 1024)
         Path(file_path).parent.mkdir(parents=True, exist_ok=True)
-        instance = cls(file_path, max_file_size)
+        instance = cls(file_path, registry_file, max_file_size)
         logger.info(f"FileStorage initialized with path: {file_path}")
         return instance
 
     def create(self, agent: AgentCard) -> bool:
         key = (agent.name.strip(), agent.provider.organization.strip())
         self._agents[key] = agent
+        if hasattr(agent, 'status'):
+            self._status_map[key] = agent.status
+        else:
+            self._status_map[key] = 'published'
         self._save()
         logger.info(f"Registered agent: {agent.name} (org={agent.provider.organization})")
         return True
 
     def find_by_key(self, name: str, organization: str) -> Optional[AgentCard]:
         key = (name.strip(), organization.strip())
-        return self._agents.get(key)
+        agent = self._agents.get(key)
+        if agent and key in self._status_map:
+            agent.status = self._status_map[key]
+        return agent
 
     def find_by_name(self, name: str) -> List[AgentCard]:
         result = []
-        for agent in self._agents.values():
+        for key, agent in self._agents.items():
             if name and agent.name == name:
+                if key in self._status_map:
+                    agent.status = self._status_map[key]
                 result.append(agent)
         return result
 
     def find_by_organization(self, organization: str) -> List[AgentCard]:
         result = []
-        for agent in self._agents.values():
+        for key, agent in self._agents.items():
             if organization and agent.provider.organization == organization:
+                if key in self._status_map:
+                    agent.status = self._status_map[key]
                 result.append(agent)
         return result
 
     def find_all(self) -> List[AgentCard]:
-        return list(self._agents.values())
+        result = []
+        for key, agent in self._agents.items():
+            if key in self._status_map:
+                agent.status = self._status_map[key]
+            result.append(agent)
+        return result
+
+    def find_by_status(self, status: str) -> List[AgentCard]:
+        result = []
+        for key, agent in self._agents.items():
+            if key in self._status_map and self._status_map[key] == status:
+                agent.status = self._status_map[key]
+                result.append(agent)
+        return result
+
+    def update_status(self, name: str, organization: str, new_status: str) -> bool:
+        key = (name.strip(), organization.strip())
+        if key not in self._agents:
+            logger.warning(f"Agent not found: {name} ({organization})")
+            return False
+        
+        self._status_map[key] = new_status
+        self._save_registry()
+        logger.info(f"Agent status updated: {name} -> {new_status}")
+        return True
 
     def update(self, name: str, organization: str, agent_data: Dict[str, Any]) -> bool:
         key = (name.strip(), organization.strip())
@@ -87,6 +125,8 @@ class FileStorage(StorageBackend):
             raise ValueError(f"Invalid agent data: {e}") from e
 
         self._agents[key] = new_agent
+        if 'status' in agent_data:
+            self._status_map[key] = agent_data['status']
         self._save()
         logger.info(f"Updated agent: {new_agent.name}(org={new_agent.provider.organization})")
         return True
@@ -97,6 +137,8 @@ class FileStorage(StorageBackend):
             logger.info(f"Deregister failed: agent not found ({name},{organization})")
             return False
         del self._agents[key]
+        if key in self._status_map:
+            del self._status_map[key]
         self._save()
         logger.info(f"Deregistered agent: {name}({organization})")
         return True
@@ -109,8 +151,17 @@ class FileStorage(StorageBackend):
         logger.info("FileStorage closed")
 
     def _save(self) -> None:
-        data = [MessageToDict(agent, preserving_proto_field_name=True) for agent in self._agents.values()]
-        json_str = json.dumps(data, ensure_ascii=False, indent=2)
+        self._save_agents()
+        self._save_registry()
+
+    def _save_agents(self) -> None:
+        agent_cards = []
+        for agent in self._agents.values():
+            agent_dict = MessageToDict(agent, preserving_proto_field_name=True)
+            agent_dict.pop('status', None)
+            agent_cards.append(agent_dict)
+
+        json_str = json.dumps(agent_cards, ensure_ascii=False, indent=2)
         data_size = len(json_str.encode('utf-8'))
         if data_size > self.max_file_size:
             error_msg = f"Data size ({data_size} bytes) exceeds maximum allowed ({self.max_file_size} bytes)"
@@ -123,7 +174,27 @@ class FileStorage(StorageBackend):
         os.chmod(self.file_path, 0o600)
         logger.info(f"Saved {len(self._agents)} agents to {self.file_path} ({data_size} bytes)")
 
+    def _save_registry(self) -> None:
+        registry_data = []
+        for key, status in self._status_map.items():
+            registry_data.append({
+                "organization": key[1],
+                "agent_name": key[0],
+                "status": status
+            })
+
+        json_str = json.dumps(registry_data, ensure_ascii=False, indent=2)
+        Path(self.registry_file).parent.mkdir(parents=True, exist_ok=True)
+        with open(self.registry_file, 'w', encoding='utf-8') as f:
+            f.write(json_str)
+        os.chmod(self.registry_file, 0o600)
+        logger.info(f"Saved {len(self._status_map)} status mappings to {self.registry_file}")
+
     def _load(self) -> None:
+        self._load_agents()
+        self._load_registry()
+
+    def _load_agents(self) -> None:
         if not os.path.exists(self.file_path):
             logger.warning(f"Persistence file {self.file_path} not found. Starting with empty registry.")
             return
@@ -153,3 +224,26 @@ class FileStorage(StorageBackend):
             logger.info(f"Loaded {len(self._agents)} agents from {self.file_path}")
         except Exception as e:
             logger.error(f"Failed to load agents from {self.file_path}: {e}")
+
+    def _load_registry(self) -> None:
+        if not os.path.exists(self.registry_file):
+            for key in self._agents.keys():
+                self._status_map[key] = 'published'
+            logger.info("No registry file found, defaulting all agents to published status")
+            return
+
+        try:
+            with open(self.registry_file, 'r', encoding='utf-8') as f:
+                registry_data = json.load(f)
+            if not isinstance(registry_data, list):
+                logger.error(f"Invalid format in {self.registry_file}: expected a list")
+                return
+            for item in registry_data:
+                try:
+                    key = (item['agent_name'].strip(), item['organization'].strip())
+                    self._status_map[key] = item['status']
+                except Exception as e:
+                    logger.error(f"Failed to load status from JSON: {e}, data: {item}")
+            logger.info(f"Loaded {len(self._status_map)} status mappings from {self.registry_file}")
+        except Exception as e:
+            logger.error(f"Failed to load registry from {self.registry_file}: {e}")

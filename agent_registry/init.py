@@ -1,8 +1,10 @@
 import os
+import sys
 from pathlib import Path
 
 from cryptography import x509
 from cryptography.hazmat.primitives import serialization
+from loguru import logger
 
 from common.cert.cert_parser import parse_cer_certificate, parse_pem_files
 from common.util.cipher_util import encrypt, DEFAULT_ENCODING
@@ -71,6 +73,41 @@ class InitCommand:
             config['signature_validation_enabled'] = 'true'
         else:
             config['signature_validation_enabled'] = default_signature
+
+        default_approval = self.existing_config.get('agent_approval_enabled', 'false')
+        current_approval = default_approval
+        approval_input = input(
+            f"是否开启审核功能 agent_approval_enabled (y/n, 默认: {default_approval}): "
+        ).strip().lower()
+        
+        if approval_input == 'n':
+            if current_approval == 'true':
+                from agent_registry.registry_instance import get_registry
+                registry = get_registry()
+                registered_agents = []
+                for agent in registry.find_all():
+                    if hasattr(agent, 'status') and agent.status == 'registered':
+                        registered_agents.append(agent)
+                
+                if registered_agents:
+                    print("错误：审核功能已开启，不能直接关闭！")
+                    print(f"原因：存在 {len(registered_agents)} 个'已注册'状态的Agent")
+                    print("建议：")
+                    print("  1. 先通过审核接口发布这些Agent")
+                    print("  2. 或通过注销接口删除这些Agent")
+                    print("  3. 处理完毕后再关闭审核功能")
+                    sys.exit(1)
+                else:
+                    config['agent_approval_enabled'] = 'false'
+                    print("审核功能已关闭")
+            else:
+                config['agent_approval_enabled'] = 'false'
+                print("审核功能已关闭")
+        elif approval_input == 'y':
+            config['agent_approval_enabled'] = 'true'
+            print("审核功能已开启")
+        else:
+            config['agent_approval_enabled'] = default_approval
 
         self.save_config_to_file(config)
 

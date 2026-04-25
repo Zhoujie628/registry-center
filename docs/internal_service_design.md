@@ -1003,24 +1003,69 @@ def get_agents_by_status(self, status: str) -> List[AgentCard]:
 
 #### 3.2.4 validated_agentcard.py修改
 
-新增status字段验证：
+新增status字段验证函数（用于验证agentregistry.json中的状态值）：
 
 ```python
-class ValidatedAgentCard(AgentCard):
-    """验证后的AgentCard"""
-    
-    status: Optional[str] = Field(
-        default='published',
-        description="Agent状态: registered(已注册) 或 published(已发布)"
-    )
-    
-    @field_validator('status')
-    @classmethod
-    def validate_status(cls, v: str) -> str:
-        if v not in ['registered', 'published']:
-            raise ValueError('状态仅支持 registered 或 published')
-        return v
+def validate_agent_card(agent: AgentCard):
+    """验证AgentCard数据（不含status字段，保持业界标准）"""
+    validate_name(agent.name)
+    validate_description(agent.description)
+    validate_version(agent.version)
+    validate_default_input_modes(agent.default_input_modes)
+    validate_default_output_modes(agent.default_output_modes)
+    validate_skills(agent.skills)
+    validate_capabilities(agent.capabilities)
+    validate_provider(agent.provider)
+    validate_supported_interfaces(agent.supported_interfaces)
+
+
+def validate_status(status: str):
+    """验证status字段值（用于agentregistry.json）"""
+    if status not in ['registered', 'published']:
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+            detail='Agent status must be either "registered" or "published"')
 ```
+
+**说明：**
+- AgentCard本身不包含status字段，保持业界标准数据结构
+- status信息存储在独立的agentregistry.json文件中
+- `validate_status`函数用于验证agentregistry.json中的状态值
+- `validate_agent_card`函数不验证status（AgentCard不包含此字段）
+
+#### 3.2.5 core.py修改
+
+新增register_with_status方法和双文件加载/保存逻辑：
+
+```python
+def register_with_status(self, agent: AgentCard, initial_status: str = 'published') -> bool:
+    """注册Agent并设置初始状态"""
+    with self._lock:
+        if self.persistence_mode == 'postgresql':
+            agent.status = initial_status
+            return self.storage.create(agent)
+        else:
+            key = self._make_key(agent.name, agent.provider.organization)
+            self._agents[key] = agent
+            self._status_map[key] = initial_status
+            self._save()
+            return True
+
+def _save(self) -> None:
+    """双文件保存"""
+    self._save_agents()      # agentcard.json（不含status）
+    self._save_registry()    # agentregistry.json（状态映射）
+
+def _load(self) -> None:
+    """双文件加载"""
+    self._load_agents()      # 加载agentcard.json
+    self._load_registry()    # 加载agentregistry.json并关联状态
+```
+
+**关键点：**
+- `_status_map`: Dict[(name, org), status] 存储状态映射
+- AgentCard存储不含status字段
+- 状态通过_status_map关联
 
 #### 3.2.5 start.py修改
 
@@ -1044,9 +1089,6 @@ def main():
     ...
 ```
 
-### 3.3 配置变更示例
-
-**RuntimeDirectory说明：**
 ### 3.3 配置变更示例
 
 #### 3.3.1 审核功能开启后的配置

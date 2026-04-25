@@ -163,6 +163,7 @@ def validate_provider(provider: AgentProvider):
 
 
 def validate_agent_card(agent: AgentCard):
+    """验证AgentCard数据（不含status字段）"""
     validate_name(agent.name)
     validate_description(agent.description)
     validate_version(agent.version)
@@ -172,3 +173,11 @@ def validate_agent_card(agent: AgentCard):
     validate_capabilities(agent.capabilities)
     validate_provider(agent.provider)
     validate_supported_interfaces(agent.supported_interfaces)
+
+
+def validate_status(status: str):
+    """验证status字段值（用于agentregistry.json）"""
+    if status not in ['registered', 'published']:
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+            detail='Agent status must be either "registered" or "published"')
