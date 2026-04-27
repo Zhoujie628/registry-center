@@ -252,19 +252,12 @@ async def _perform_registration(
         agent: AgentCard,
         client_ip: str,
         details: dict,
+        initial_status: str = 'published',
 ) -> bool:
     """Execute the actual registration, handle ValueError and other exceptions, log accordingly."""
     try:
         save_handle = HandlerRegistry.get_handler(InterfaceType.INSERT)
-        success = await save_handle.handle(agent)
-        await audit_handle.handle({
-            "operation_name": OperationName.REGISTER_AGENT,
-            "level": LogLevel.MINOR,
-            "result": OperationResult.SUCCESS,
-            "object_name": OperatorObject.AGENT,
-            "details": details,
-            "client_ip": client_ip
-        })
+        success = await save_handle.handle(agent, initial_status=initial_status)
         return success
     except ValueError as e:
         details["message"] = str(e)
@@ -379,7 +372,6 @@ async def register_agent(
         await _check_agent_limit(registry, client_ip, details)
         await _check_duplicate_agent(agent, registry, client_ip, details)
         validate_agent_card(agent)
-        result = await _perform_registration(agent, client_ip, details)
         logger.info(f"Register agent success: name={agent.name}, org={agent.provider.organization}")
 
         approval_enabled = config.get('agent_approval_enabled', 'false')
@@ -390,7 +382,7 @@ async def register_agent(
             initial_status = 'published'
             status_message = "Agent registered and published"
 
-        result = registry.register_with_status(agent, initial_status)
+        result = await _perform_registration(agent, client_ip, details, initial_status=initial_status)
 
         await audit_handle.handle({
             "operation_name": OperationName.REGISTER_AGENT,
