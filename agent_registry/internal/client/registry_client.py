@@ -14,6 +14,7 @@
 #    under the License.
 
 import json
+import platform
 import socket
 from typing import Dict, Any
 
@@ -22,32 +23,55 @@ from loguru import logger
 
 class RegistryClient:
     SOCKET_PATH = "run/registry-center/internal.sock"
-    
-    def __init__(self, socket_path: str = None):
+    TCP_HOST = "127.0.0.1"
+    # cli模拟客户端端口，windows系统下启动必须与uds服务端端口一致
+    TCP_PORT = 9302
+
+    def __init__(self, socket_path: str = None, tcp_host: str = None, tcp_port: int = None):
         self.socket_path = socket_path or self.SOCKET_PATH
-    
+        self.tcp_host = tcp_host or self.TCP_HOST
+        self.tcp_port = tcp_port or self.TCP_PORT
+        self._use_tcp = platform.system() == 'Windows'
+
     def _send_request(self, request: Dict[str, Any]) -> Dict[str, Any]:
-        client_socket = socket.socket(socket.AF_UNIX, socket.SOCK_STREAM)
-        try:
-            client_socket.connect(self.socket_path)
-        except FileNotFoundError:
-            return {
-                "success": False,
-                "error": "Socket not found",
-                "message": "Internal service is not running"
-            }
-        except PermissionError:
-            return {
-                "success": False,
-                "error": "Permission denied",
-                "message": "You don't have permission to access registry center"
-            }
-        except ConnectionRefusedError:
-            return {
-                "success": False,
-                "error": "Connection refused",
-                "message": "Internal service is not accepting connections"
-            }
+        if self._use_tcp:
+            client_socket = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+            try:
+                client_socket.connect((self.tcp_host, self.tcp_port))
+            except ConnectionRefusedError:
+                return {
+                    "success": False,
+                    "error": "Connection refused",
+                    "message": f"Internal service is not running on {self.tcp_host}:{self.tcp_port}"
+                }
+            except Exception as e:
+                return {
+                    "success": False,
+                    "error": "Connection failed",
+                    "message": str(e)
+                }
+        else:
+            client_socket = socket.socket(socket.AF_UNIX, socket.SOCK_STREAM)
+            try:
+                client_socket.connect(self.socket_path)
+            except FileNotFoundError:
+                return {
+                    "success": False,
+                    "error": "Socket not found",
+                    "message": "Internal service is not running"
+                }
+            except PermissionError:
+                return {
+                    "success": False,
+                    "error": "Permission denied",
+                    "message": "You don't have permission to access registry center"
+                }
+            except ConnectionRefusedError:
+                return {
+                    "success": False,
+                    "error": "Connection refused",
+                    "message": "Internal service is not accepting connections"
+                }
         
         try:
             client_socket.send(json.dumps(request).encode('utf-8'))
