@@ -18,6 +18,7 @@ import asyncio
 import os
 import ssl
 import sys
+import threading
 
 import uvicorn
 from loguru import logger
@@ -25,6 +26,7 @@ from uvicorn import config
 
 from agent_registry.cipher_converter import CipherConverter
 from agent_registry.config import CONN_TIMEOUT, TLS_CIPHER, FORWARDED_ALLOW_IPS
+from agent_registry.internal.registry_center_internal_service import RegistryCenterInternalService
 from agent_registry.server import app
 from common.cert.cert_validater import CertValidator
 from common.custom.custom_handle import HandlerRegistry
@@ -35,6 +37,9 @@ from common.util.conf_util import conf_singleton_obj, load_cert_password, set_ss
 from common.util.config_util import get_conf
 
 audit_handle = HandlerRegistry.get_handler(InterfaceType.AUDIT)
+
+_internal_service = None
+_internal_thread = None
 
 
 def get_user_info_from_env():
@@ -127,8 +132,32 @@ class CustomUvicornServer:
         server.run()
 
 
+def start_internal_service():
+    global _internal_service, _internal_thread
+    try:
+        _internal_service = RegistryCenterInternalService()
+        _internal_thread = threading.Thread(target=_internal_service.start, daemon=True)
+        _internal_thread.start()
+        logger.info("Internal service started on UDS socket: run/registry-center/internal.sock")
+    except Exception as e:
+        logger.error(f"Failed to start internal service: {e}")
+
+
+def stop_internal_service():
+    global _internal_service
+    if _internal_service:
+        try:
+            _internal_service.stop()
+            logger.info("Internal service stopped")
+        except Exception as e:
+            logger.error(f"Failed to stop internal service: {e}")
+
+
 def main():
     server_config = get_conf()
+
+    start_internal_service()
+
     is_https = server_config.get("enable_https", True)
     is_enable_https = str(is_https).lower() == 'true'
     if not is_enable_https:
@@ -139,6 +168,7 @@ def main():
             conf_obj = conf_singleton_obj
             result = CertValidator(conf_obj).validate()
             if not result.is_valid:
+                stop_internal_service()
                 sys.exit(result.message)
             # After validation, set etc/ssl directory permissions to 700 and file permissions to 600
             set_ssl_folder_permissions()
@@ -147,6 +177,7 @@ def main():
             server.run()
         except Exception as e:
             logger.error(f"agent_registry server start failed {e}")
+            stop_internal_service()
             asyncio.run(audit_handle.handle({
                 "object_name": OperatorObject.SERVICE,
                 "operation_name": OperationName.START_SERVICE,

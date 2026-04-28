@@ -1,10 +1,10 @@
-# Agent审核功能设计文档
+# 注册中心内部交互服务设计文档
 
 ## 1. 功能概述
 
 ### 1.1 背景
 
-注册中心系统(registry-center)作为多个Agent之间的中转站，需要与多个Agent进程进行交互。为了更好地管理Agent的发布流程，需要补充实现Agent审核功能。
+注册中心系统(registry-center)作为多个Agent之间的中转站，需要与多个Agent进程进行交互。为了更好地管理Agent的发布流程和提供内部管理能力，需要补充实现内部交互服务。
 
 ### 1.2 核心需求
 
@@ -12,7 +12,9 @@
 
 - 用户可通过`python -m agent_registry.init`命令配置审核开关的开启状态
 - 审核开关配置写入`etc/conf/server.conf`文件
-- 审核开关开启后不能关闭（单向开关）
+- 审核开关开启后可以关闭，但需检查是否存在"已注册"状态的Agent
+- 若存在"已注册"状态的Agent，则报错提醒用户先发布或删除这些Agent
+- 若不存在"已注册"状态的Agent，则成功关闭审核开关
 
 #### 需求2：Agent状态管理
 
@@ -23,12 +25,28 @@
 - **审核开关关闭时**：
   - Agent注册后直接设置为"已发布"状态
 
-#### 需求3：审核接口
+#### 需求3：内部交互服务
 
-- 通过UDS(Unix Domain Socket)接口实现Agent审核能力
-- 入参：agentName(agent名称) + organization(组织名称)
-- 审核开关开启时：调用接口更新Agent状态为"已发布"
-- 审核开关关闭时：接口调用报错
+- 通过UDS(Unix Domain Socket)实现内部交互能力
+- 统一的socket入口，支持多种内部操作
+- 通过action字段区分不同操作类型
+- 当前支持操作：审核(approval)、后续可扩展更多操作
+
+### 1.3 设计原则
+
+#### 1.3.1 统一Socket架构
+
+- **单一socket文件**：所有内部交互操作共用一个socket
+- **Handler模式**：不同操作由不同Handler处理
+- **易于扩展**：新增操作只需添加新Handler
+- **参考业界标准**：类似Docker的`/var/run/docker.sock`设计
+
+#### 1.3.2 同进程部署
+
+- **进程内线程**：UDS服务作为线程与HTTP服务在同一进程
+- **数据共享**：共享RegistryCore实例，无需数据同步
+- **配置统一**：所有配置在同一个配置文件
+- **管理简单**：只需管理一个进程
 
 ## 2. 系统设计
 
@@ -40,7 +58,7 @@
 
 ```ini
 # Agent审核功能开关
-agent_audit_enabled=true
+agent_approval_enabled=true
 ```
 
 **配置说明：**
@@ -56,7 +74,7 @@ agent_audit_enabled=true
            │
            ▼
 ┌─────────────────────────────────┐
-│  读取现有配置: agent_audit_enabled │
+│  读取现有配置: agent_approval_enabled │
 └──────────┬──────────────────────┘
            │
            ▼
@@ -77,46 +95,62 @@ agent_audit_enabled=true
       │         ▼
       │  ┌──────────────────────┐
       │  │ 检查现有配置           │
-      │  │ agent_audit_enabled=? │
+      │  │ agent_approval_enabled=? │
       │  └─────────┬────────────┘
       │       ┌────┴────┐
       │       │         │
       │    现有=true  现有=false
       │       │         │
       │       ▼         ▼
+      │  ┌─────────────┐  ┌─────────┐
+      │  │检查是否存在  │  │允许关闭 │
+      │  │"已注册"Agent │  │→开启审核│
+      │  └─────────┬───┘  └─────────┘
+      │     ┌─────┴─────┐
+      │     │           │
+      │   存在        不存在
+      │     │           │
+      │     ▼           ▼
       │  ┌─────────┐  ┌─────────┐
-      │  │报错：不能│  │允许关闭 │
-      │  │关闭审核  │  │→开启审核│
+      │  │报错：请先│  │成功关闭 │
+      │  │发布Agent │  │审核开关 │
       │  └─────────┘  └─────────┘
       │
       ▼
 ┌─────────────────────────────────┐
 │  写入配置到server.conf            │
-│  agent_audit_enabled=true        │
+│  agent_approval_enabled=true/false│
 └─────────────────────────────────┘
 ```
 
 #### 2.1.3 配置变更规则
 
-**规则1：审核开关开启后不能关闭**
+**规则1：审核开关开启后可以关闭，但需检查已注册Agent**
 
 ```python
-# 现有配置: agent_audit_enabled=true
+# 现有配置: agent_approval_enabled=true
 # 用户输入: n (尝试关闭)
 
-# 系统报错：
-错误：审核功能已开启，不能关闭！
-原因：已存在"已注册"状态的Agent，关闭审核会导致状态不一致。
-
-建议：
-1. 保持审核功能开启状态
-2. 或先处理所有"已注册"状态的Agent
+# 系统检查是否存在"已注册"状态的Agent:
+if has_registered_agents():
+    # 系统报错：
+    错误：审核功能已开启，不能直接关闭！
+    原因：存在"已注册"状态的Agent，关闭审核会导致状态不一致。
+    
+    建议：
+    1. 先通过审核接口发布所有"已注册"状态的Agent
+    2. 或通过注销接口删除不需要的Agent
+    3. 处理完毕后再关闭审核功能
+else:
+    # 系统允许关闭：
+    配置成功：审核功能已关闭
+    注意：新注册的Agent将直接为"已发布"状态
 ```
 
 **规则2：审核开关关闭后可以开启**
 
 ```python
-# 现有配置: agent_audit_enabled=false
+# 现有配置: agent_approval_enabled=false
 # 用户输入: y (尝试开启)
 
 # 系统允许：
@@ -147,7 +181,7 @@ Agent状态分为两种：
          ▼
 ┌─────────────────────────────────┐
 │  检查审核开关配置                 │
-│  agent_audit_enabled=?          │
+│  agent_approval_enabled=?       │
 └────────┬────────────────────────┘
          │
     ┌────┴────┐
@@ -163,7 +197,7 @@ Agent状态分为两种：
       ▼
 ┌──────────────┐
 │ 检查审核开关  │
-│ agent_audit_enabled=? │
+│ agent_approval_enabled=? │
 └───────┬──────┘
     ┌───┴───┐
     │       │
@@ -237,10 +271,10 @@ async def register_agent(agent_card: ValidatedAgentCard):
         # 验签逻辑...
     
     # 步骤2：读取审核开关配置
-    audit_enabled = config.get('agent_audit_enabled', 'false')
+    approval_enabled = config.get('agent_approval_enabled', 'false')
     
     # 步骤3：设置Agent初始状态
-    if audit_enabled == 'true':
+    if approval_enabled == 'true':
         agent_card.status = 'registered'  # 已注册，等待审核
     else:
         agent_card.status = 'published'   # 已发布，无需审核
@@ -256,11 +290,130 @@ async def register_agent(agent_card: ValidatedAgentCard):
     }
 ```
 
-### 2.4 UDS审核接口设计
+### 2.3 查询接口变更
 
-#### 2.4.1 UDS接口定义
+#### 2.3.1 接口说明
 
-**UDS Socket路径：** `/var/run/agent_audit.sock`
+系统提供两个HTTP查询接口，用于查询Agent信息：
+
+**接口1：** `/rest/a2a-t/v1/agents/{name}` - 按名称和组织查询单个Agent
+
+**接口2：** `/rest/a2a-t/v1/agents/query` - 按条件查询Agent列表
+
+#### 2.3.2 查询逻辑变更
+
+**变更规则：只查询处于"已发布"状态的Agent**
+
+- 查询接口只返回`status=published`的Agent
+- 处于`status=registered`状态的Agent不会出现在查询结果中
+- 这样可以确保外部调用者只能看到已经审核通过的Agent
+
+**实现要点：**
+
+修改`agent_registry/server.py`中的查询接口逻辑：
+
+1. `/rest/a2a-t/v1/agents/{name}`接口：
+   - 调用`find_by_key()`方法时，检查Agent的status字段
+   - 如果Agent存在但status为`registered`，返回404或空结果
+   - 只有status为`published`的Agent才会返回
+
+2. `/rest/a2a-t/v1/agents/query`接口：
+   - 调用`find_by_name()`、`find_by_organization()`等方法时，过滤掉status为`registered`的Agent
+   - 只返回status为`published`的Agent列表
+
+**代码示例：**
+
+```python
+@app.get("/rest/a2a-t/v1/agents/{name}")
+async def get_agent(name: str, organization: str):
+    """查询单个Agent（只返回已发布状态）"""
+    agent = registry.find_by_key(name, organization)
+    
+    # 检查Agent状态，只返回已发布的Agent
+    if agent and agent.status != 'published':
+        return None  # 或抛出404异常
+    
+    return agent
+
+@app.get("/rest/a2a-t/v1/agents/query")
+async def list_agents(name: Optional[str] = None, organization: Optional[str] = None):
+    """查询Agent列表（只返回已发布状态）"""
+    agents = registry.find_all()
+    
+    # 过滤条件
+    if name:
+        agents = [a for a in agents if a.name == name]
+    if organization:
+        agents = [a for a in agents if a.provider.organization == organization]
+    
+    # 只返回已发布状态的Agent
+    agents = [a for a in agents if a.status == 'published']
+    
+    return agents
+```
+
+### 2.4 UDS内部交互服务设计
+
+#### 2.4.1 统一Socket架构
+
+**设计理念：**
+
+采用统一socket + Handler分发模式，类似Docker的设计：
+
+- 单一socket入口：socket文件存放在项目目录下
+- Socket路径：`run/registry-center/internal.sock`（项目根目录下的相对路径）
+- 所有内部操作通过action字段区分
+- Handler模式处理不同操作
+- 易于扩展新功能
+
+**架构图：**
+
+```
+┌─────────────────────────────────────────┐
+│ RegistryCenterService (统一服务)          │
+│                                         │
+│  监听：run/registry-center/internal.sock │
+│                                         │
+│  ┌─────────────────────────────────┐   │
+│  │ 请求分发器        │   │
+│  │ 根据action分发到不同handler         │   │
+│  └─────────────┬───────────────────┘   │
+│                │                        │
+│      ┌─────────┴─────────┬──────┬─────┐│
+│      │                   │      │     ││
+│      ▼                   ▼      ▼     ▼│
+│  ┌────────┐  ┌────────┐ ┌────┐ ┌────┐ │
+│  │审核    │  │配置    │ │统计│ │查询│ │
+│  │Handler │  │Handler │ │Hdlr│ │Hdlr│ │
+│  └────────┘  └────────┘ └────┘ └────┘ │
+│                                         │
+│  后续扩充时只需添加新Handler              │
+└─────────────────────────────────────────┘
+
+                    ↓ UDS连接
+
+┌──────────────────┐
+│ 客户端            │
+│                  │
+│ 发送请求：         │
+│ {                │
+│  "action":"approval",│ ← action字段区分操作
+│  "params": {     │ ← params封装请求参数
+│    "agent_name":"X",│
+│    "organization":"Y"│
+│  }               │
+│ }                │
+└──────────────────┘
+```
+
+#### 2.4.2 协议设计
+
+**UDS Socket路径：** `run/registry-center/internal.sock`
+
+**Socket路径说明：**
+- socket文件存放在项目根目录下的`run/registry-center/`目录
+- 启动时自动创建该目录（如果不存在）
+- socket文件权限设置为`0o660`（rw-rw----）
 
 **接口协议：** JSON over UDS
 
@@ -268,9 +421,11 @@ async def register_agent(agent_card: ValidatedAgentCard):
 
 ```json
 {
-  "action": "audit",
-  "agent_name": "TestAgent",
-  "organization": "TestOrg"
+  "action": "approval",        // 操作类型
+  "params": {                  // 请求参数（不同操作有不同的参数）
+    "agent_name": "TestAgent", // Agent名称
+    "organization": "TestOrg"  // 组织名称
+  }
 }
 ```
 
@@ -279,7 +434,7 @@ async def register_agent(agent_card: ValidatedAgentCard):
 ```json
 {
   "success": true,
-  "message": "Agent audit successful",
+  "message": "Agent approval successful",
   "agent": {
     "name": "TestAgent",
     "organization": "TestOrg",
@@ -288,28 +443,95 @@ async def register_agent(agent_card: ValidatedAgentCard):
 }
 ```
 
-#### 2.4.2 UDS服务端设计
+**支持的操作类型（action）：**
 
-**文件结构：**
+| action | 说明 | 参数 |
+|--------|------|------|
+| `approval` | 审核Agent | agent_name, organization |
+| `config` | 配置管理 | config_key, config_value |
+| `stats` | 统计查询 | type |
+| `query` | Agent查询 | agent_name, organization |
+
+#### 2.4.3 进程架构
+
+**部署方案：同进程多线程**
+
+```
+┌─────────────────────────────────────────┐
+│ Registry Center 进程（单个进程）          │
+│ PID: 12345                              │
+│                                         │
+│ 主线程：HTTP服务                         │
+│ ├─ uvicorn.run()                        │
+│ ├─ 监听：127.0.0.1:9301                  │
+│ ├─ /rest/a2a-t/v1/agents/register       │
+│ ├─ /rest/a2a-t/v1/agents/query          │
+│ └─ ...其他HTTP接口                       │
+│                                         │
+│ 子线程：UDS服务                          │
+│ ├─ RegistryCenterService.start()        │
+│ ├─ 监听：run/registry-center/internal.sock │
+│ └─ 处理内部交互请求                       │
+│                                         │
+│ 共享资源：                                │
+│ ├─ RegistryCore实例（共享Agent数据）      │
+│ ├─ 配置文件（共享etc/conf/server.conf）  │
+│ └─ 持久化存储（根据persistence.mode配置） │
+└─────────────────────────────────────────┘
+```
+
+**关键特点：**
+
+1. **数据共享**：UDS和HTTP服务共享RegistryCore实例
+2. **无数据同步**：直接访问共享内存，无需IPC
+3. **配置统一**：所有配置在同一文件
+4. **管理简单**：只需启动/停止一个进程
+5. **Socket路径在项目目录**：`run/registry-center/internal.sock`
+
+#### 2.4.4 文件结构
 
 ```
 agent_registry/
-├── audit/
-│   ├── audit_service.py      # UDS服务端
-│   ├── audit_handler.py      # 审核处理器
-│   └── audit_socket.py       # Socket管理
+├── internal/                     # 内部交互服务
+│   ├── __init__.py
+│   ├── registry_service.py       # 统一UDS服务端
+│   ├── request_dispatcher.py     # 请求分发器
+│   ├── permission_checker.py     # 权限检查器
+│   │
+│   ├── handlers/                 # 操作处理器
+│   │   ├── __init__.py
+│   │   ├── base_handler.py       # Handler基类
+│   │   ├── approval_handler.py   # 审核处理器
+│   │   ├── config_handler.py     # 配置处理器
+│   │   ├── stats_handler.py      # 统计处理器
+│   │   ├── query_handler.py      # 查询处理器
+│   │   └── deregister_handler.py # 注销处理器（后续扩充）
+│   │
+│   ├── client/                   # 客户端
+│   │   ├── __init__.py
+│   │   ├── registry_client.py    # 统一客户端类
+│   │   └── cli_registry.py       # 命令行工具
+│   │
+│   └── protocols/                # 协议定义
+│       ├── __init__.py
+│       ├── request.py            # 请求协议
+│       ├── response.py           # 响应协议
+│       └── actions.py            # action定义
 ```
 
 **服务端代码结构：**
 
 ```python
-class AuditService:
-    """Agent审核UDS服务"""
+class RegistryCenterService:
+    """注册中心内部交互UDS服务（统一入口）"""
+    
+    SOCKET_PATH = "run/registry-center/internal.sock"
     
     def __init__(self):
-        self.socket_path = "/var/run/agent_audit.sock"
+        self.socket_path = self.SOCKET_PATH
         self.registry = get_registry()
         self.config = get_conf()
+        self.dispatcher = RequestDispatcher()
     
     def start(self):
         """启动UDS服务"""
@@ -327,7 +549,7 @@ class AuditService:
         
         # 设置权限：只有特定组可以访问
         os.chmod(self.socket_path, 0o660)  # rw-rw----
-        os.chown(self.socket_path, 0, 1000)  # root:audit_group
+        os.chown(self.socket_path, 0, 1000)  # root:registry_group
         
         # 监听连接
         server_socket.listen(5)
@@ -335,165 +557,153 @@ class AuditService:
         # 处理请求
         while True:
             conn, _ = server_socket.accept()
-            self._handle_audit_request(conn)
+            self._handle_request(conn)
     
-    def _handle_audit_request(self, conn):
-        """处理审核请求"""
-        # 接收请求
-        data = conn.recv(1024)
-        request = json.loads(data)
-        
-        # 检查审核开关
-        audit_enabled = self.config.get('agent_audit_enabled', 'false')
-        if audit_enabled != 'true':
-            # 审核功能关闭，报错
-            response = {
-                "success": false,
-                "error": "Audit function is disabled",
-                "message": "Cannot audit agent when audit_enabled=false"
-            }
+    def _handle_request(self, conn):
+        """处理请求并分发到对应Handler"""
+        try:
+            # 接收请求
+            data = conn.recv(4096)
+            request = json.loads(data)
+            
+            # 获取action
+            action = request.get('action', '')
+            params = request.get('params', {})
+            
+            # 分发到对应Handler
+            handler = self.dispatcher.get_handler(action)
+            if not handler:
+                response = {
+                    "success": False,
+                    "error": f"Unknown action: {action}"
+                }
+            else:
+                response = handler.handle(params, self.registry, self.config)
+            
             conn.send(json.dumps(response).encode())
+        finally:
             conn.close()
-            return
-        
-        # 审核功能开启，执行审核
-        agent_name = request['agent_name']
-        organization = request['organization']
-        
-        # 查找Agent
-        agent = self.registry.get_by_key(agent_name, organization)
-        if not agent:
-            response = {
-                "success": false,
-                "error": "Agent not found"
-            }
-            conn.send(json.dumps(response).encode())
-            conn.close()
-            return
-        
-        # 检查Agent状态
-        if agent.status == 'published':
-            response = {
-                "success": false,
-                "error": "Agent already published"
-            }
-            conn.send(json.dumps(response).encode())
-            conn.close()
-            return
-        
-        # 更新状态为已发布
-        agent.status = 'published'
-        self.registry.update(agent_name, organization, agent.model_dump())
-        
-        # 返回成功响应
-        response = {
-            "success": true,
-            "message": "Agent audit successful",
-            "agent": {
-                "name": agent_name,
-                "organization": organization,
-                "status": "published"
-            }
-        }
-        conn.send(json.dumps(response).encode())
-        conn.close()
 ```
 
-#### 2.4.3 UDS客户端设计
+#### 2.4.5 客户端设计
 
 **客户端代码：**
 
 ```python
-class AuditClient:
-    """Agent审核UDS客户端"""
+class RegistryClient:
+    """注册中心内部交互客户端"""
+    
+    SOCKET_PATH = "run/registry-center/internal.sock"
     
     def __init__(self):
-        self.socket_path = "/var/run/agent_audit.sock"
+        self.socket_path = self.SOCKET_PATH
     
-    def audit_agent(self, agent_name: str, organization: str) -> dict:
-        """
-        审核Agent
-        
-        Args:
-            agent_name: Agent名称
-            organization: 组织名称
-        
-        Returns:
-            dict: 审核结果
-        """
-        # 创建UDS socket
+    def _send_request(self, request: dict) -> dict:
+        """发送请求到UDS服务"""
         client_socket = socket.socket(socket.AF_UNIX, socket.SOCK_STREAM)
         
-        # 连接服务端
         try:
             client_socket.connect(self.socket_path)
         except PermissionError:
             return {
-                "success": false,
+                "success": False,
                 "error": "Permission denied",
-                "message": "You don't have permission to audit agents"
+                "message": "You don't have permission to access registry center"
             }
-        
-        # 构造请求
-        request = {
-            "action": "audit",
-            "agent_name": agent_name,
-            "organization": organization
-        }
         
         # 发送请求
         client_socket.send(json.dumps(request).encode())
         
         # 接收响应
-        response = client_socket.recv(1024)
+        response = client_socket.recv(4096)
         result = json.loads(response.decode())
         
-        # 关闭连接
         client_socket.close()
-        
         return result
+    
+    def approval_agent(self, agent_name: str, organization: str) -> dict:
+        """审核Agent"""
+        request = {
+            "action": "approval",
+            "params": {
+                "agent_name": agent_name,
+                "organization": organization
+            }
+        }
+        return self._send_request(request)
+    
+    def get_config(self, config_key: str) -> dict:
+        """获取配置"""
+        request = {
+            "action": "config",
+            "params": {
+                "config_key": config_key
+            }
+        }
+        return self._send_request(request)
+    
+    def get_stats(self, stat_type: str) -> dict:
+        """获取统计信息"""
+        request = {
+            "action": "stats",
+            "params": {
+                "type": stat_type
+            }
+        }
+        return self._send_request(request)
+    
+    def query_agent(self, agent_name: str, organization: str) -> dict:
+        """查询Agent"""
+        request = {
+            "action": "query",
+            "params": {
+                "agent_name": agent_name,
+                "organization": organization
+            }
+        }
+        return self._send_request(request)
 ```
 
-#### 2.4.4 UDS访问控制
+#### 2.4.6 UDS访问控制
 
 **权限设计：**
 
 ```bash
 # Socket文件权限
-ls -la /var/run/agent_audit.sock
+ls -la run/registry-center/internal.sock
 
 # 输出：
-srw-rw---- 1 root audit_group 0 Jan 1 12:00 /var/run/agent_audit.sock
+srw-rw---- 1 root registry_group 0 Jan 1 12:00 run/registry-center/internal.sock
 ```
 
 **权限说明：**
 - 所有者：root（可读写）
-- 组：audit_group（可读写）
+- 组：registry_group（可读写）
 - 其他用户：无权限
 
 **访问控制逻辑：**
-1. 只有audit_group组成员可以调用审核接口
+1. 只有registry_group组成员可以调用内部交互接口
 2. 普通用户无法访问UDS socket
 3. 通过文件权限自动实现访问控制
 
-#### 2.4.5 审核接口流程图
+#### 2.4.7 审核接口流程图
 
 ```
 ┌─────────────────────────────────┐
-│  审核客户端调用审核接口           │
-│  audit_agent("TestAgent", "TestOrg") │
+│  客户端调用内部交互接口           │
+│  client.approval_agent("TestAgent", "TestOrg") │
 └──────────┬──────────────────────┘
            │
            ▼
 ┌─────────────────────────────────┐
 │  连接UDS Socket                  │
-│  /var/run/agent_audit.sock       │
+│  run/registry-center/internal.sock │
 └──────────┬──────────────────────┘
            │
            ▼
 ┌─────────────────────────────────┐
 │  检查文件权限                     │
-│  (audit_group组成员?)            │
+│  (registry_group组成员?)          │
 └──────────┬──────────────────────┘
            │
       ┌────┴────┐
@@ -508,19 +718,25 @@ srw-rw---- 1 root audit_group 0 Jan 1 12:00 /var/run/agent_audit.sock
       │
       ▼
 ┌─────────────────────────────────┐
-│  发送审核请求                     │
-│  {"action":"audit", ...}         │
+│  发送请求                         │
+│  {"action":"approval", "params":{...}} │
 └──────────┬──────────────────────┘
            │
            ▼
 ┌─────────────────────────────────┐
 │  UDS服务端接收请求                │
+│  RequestDispatcher分发           │
+└──────────┬──────────────────────┘
+           │
+           ▼
+┌─────────────────────────────────┐
+│  ApprovalHandler处理请求           │
 └──────────┬──────────────────────┘
            │
            ▼
 ┌─────────────────────────────────┐
 │  检查审核开关                     │
-│  agent_audit_enabled=?          │
+│  agent_approval_enabled=?       │
 └──────────┬──────────────────────┘
            │
       ┌────┴────┐
@@ -529,7 +745,7 @@ srw-rw---- 1 root audit_group 0 Jan 1 12:00 /var/run/agent_audit.sock
       │         │
       │         ▼
       │  ┌──────────────────────┐
-      │  │ 返回错误：Audit      │
+      │  │ 返回错误：Approval   │
       │  │ function is disabled │
       │  └──────────────────────┘
       │
@@ -592,11 +808,31 @@ srw-rw---- 1 root audit_group 0 Jan 1 12:00 /var/run/agent_audit.sock
 
 ```
 agent_registry/
-├── audit/
+├── internal/                     # 内部交互服务
 │   ├── __init__.py
-│   ├── audit_service.py      # UDS审核服务
-│   ├── audit_handler.py      # 审核业务逻辑
-│   └── audit_client.py       # 审核客户端（供测试使用）
+│   ├── registry_service.py       # 统一UDS服务端
+│   ├── request_dispatcher.py     # 请求分发器
+│   ├── permission_checker.py     # 权限检查器
+│   │
+│   ├── handlers/                 # 操作处理器
+│   │   ├── __init__.py
+│   │   ├── base_handler.py       # Handler基类
+│   │   ├── approval_handler.py      # 审核处理器
+│   │   ├── config_handler.py     # 配置处理器
+│   │   ├── stats_handler.py      # 统计处理器
+│   │   ├── query_handler.py      # 查询处理器
+│   │   └── deregister_handler.py # 注销处理器（后续扩充）
+│   │
+│   ├── client/                   # 客户端
+│   │   ├── __init__.py
+│   │   ├── registry_client.py    # 统一客户端类
+│   │   └── cli_registry.py       # 命令行工具
+│   │
+│   └── protocols/                # 协议定义
+│       ├── __init__.py
+│       ├── request.py            # 请求协议
+│       ├── response.py           # 响应协议
+│       └── actions.py            # action定义
 ```
 
 #### 3.1.2 修改文件
@@ -604,9 +840,13 @@ agent_registry/
 ```
 agent_registry/
 ├── init.py                   # 新增审核开关配置提示
-├── server.py                 # 修改注册接口，设置Agent初始状态
+├── server.py                 # 修改注册接口和查询接口逻辑
 ├── core.py                   # 新增状态管理方法
-├── start.py                  # 启动UDS审核服务
+├── start.py                  # 启动UDS内部交互服务线程
+├── persistence/
+│   ├── file_storage.py       # 新增双文件存储处理
+│   ├── postgresql_storage.py # 新增status字段处理
+│   └── sql_queries.py        # 新增status字段SQL
 ├── model/
 │   └── validated_agentcard.py  # 新增status字段验证
 ```
@@ -619,29 +859,36 @@ agent_registry/
 
 ```python
 # 新增代码片段
-default_audit_enabled = self.existing_config.get('agent_audit_enabled', 'false')
-current_audit_enabled = default_audit_enabled
+default_approval_enabled = self.existing_config.get('agent_approval_enabled', 'false')
+current_approval_enabled = default_approval_enabled
 
-# 检查现有配置
-if current_audit_enabled == 'true':
-    print("⚠️  注意：审核功能已开启，不能关闭！")
-    audit_input = 'y'  # 强制保持开启
-else:
-    audit_input = input(
-        f"是否开启审核功能 agent_audit_enabled (y/n, 默认: {default_audit_enabled}): "
-    ).strip().lower()
+# 提示用户输入
+approval_input = input(
+    f"是否开启审核功能 agent_approval_enabled (y/n, 默认: {default_approval_enabled}): "
+).strip().lower()
 
 # 处理用户输入
-if audit_input == 'n':
-    if current_audit_enabled == 'true':
-        print("❌ 错误：审核功能已开启，不能关闭！")
-        print("   原因：已存在'已注册'状态的Agent")
-        sys.exit(1)
-    config['agent_audit_enabled'] = 'false'
-elif audit_input == 'y':
-    config['agent_audit_enabled'] = 'true'
+if approval_input == 'n':
+    if current_approval_enabled == 'true':
+        # 检查是否存在"已注册"状态的Agent
+        registered_agents = registry.get_agents_by_status('registered')
+        if registered_agents:
+            print("❌ 错误：审核功能已开启，不能直接关闭！")
+            print(f"   原因：存在 {len(registered_agents)} 个'已注册'状态的Agent")
+            print("   建议：")
+            print("   1. 先通过审核接口发布这些Agent")
+            print("   2. 或通过注销接口删除这些Agent")
+            print("   3. 处理完毕后再关闭审核功能")
+            sys.exit(1)
+        else:
+            # 不存在已注册Agent，允许关闭
+            config['agent_approval_enabled'] = 'false'
+            print("✓ 审核功能已关闭")
+elif approval_input == 'y':
+    config['agent_approval_enabled'] = 'true'
+    print("✓ 审核功能已开启")
 else:
-    config['agent_audit_enabled'] = default_audit_enabled
+    config['agent_approval_enabled'] = default_approval_enabled
 ```
 
 #### 3.2.2 server.py修改
@@ -654,12 +901,12 @@ async def register_agent(agent: ValidatedAgentCard, request: Request):
     # 验签逻辑（如果开启）...
     
     # 读取审核开关配置
-    audit_enabled = config.get('agent_audit_enabled', 'false')
+    approval_enabled = config.get('agent_approval_enabled', 'false')
     
     # 设置Agent初始状态
-    if audit_enabled == 'true':
+    if approval_enabled == 'true':
         agent.status = 'registered'
-        status_message = "Agent registered, waiting for audit"
+        status_message = "Agent registered, waiting for approval"
     else:
         agent.status = 'published'
         status_message = "Agent registered and published"
@@ -676,6 +923,37 @@ async def register_agent(agent: ValidatedAgentCard, request: Request):
         },
         status_code=status.HTTP_201_CREATED
     )
+```
+
+修改查询接口，只返回已发布状态的Agent（响应体不包含status字段）：
+
+```python
+@app.get("/rest/a2a-t/v1/agents/{name}")
+async def get_agent(name: str, organization: str):
+    agent = registry.find_by_key(name, organization)
+    
+    # 只返回已发布状态的Agent
+    if agent and agent.status != 'published':
+        raise HTTPException(status_code=404, detail="Agent not found or not published")
+    
+    # 返回Agent数据，不包含status字段（保持业界标准）
+    return MessageToDict(agent, preserving_proto_field_name=True)
+
+@app.get("/rest/a2a-t/v1/agents/query")
+async def list_agents(name: Optional[str] = None, organization: Optional[str] = None):
+    agents = registry.find_all()
+    
+    # 过滤条件
+    if name:
+        agents = [a for a in agents if a.name == name]
+    if organization:
+        agents = [a for a in agents if a.provider.organization == organization]
+    
+    # 只返回已发布状态的Agent
+    agents = [a for a in agents if a.status == 'published']
+    
+    # 返回Agent数据列表，不包含status字段（保持业界标准）
+    return [MessageToDict(a, preserving_proto_field_name=True) for a in agents]
 ```
 
 #### 3.2.3 core.py修改
@@ -725,44 +1003,87 @@ def get_agents_by_status(self, status: str) -> List[AgentCard]:
 
 #### 3.2.4 validated_agentcard.py修改
 
-新增status字段验证：
+新增status字段验证函数（用于验证agentregistry.json中的状态值）：
 
 ```python
-class ValidatedAgentCard(AgentCard):
-    """验证后的AgentCard"""
-    
-    status: Optional[str] = Field(
-        default='published',
-        description="Agent状态: registered(已注册) 或 published(已发布)"
-    )
-    
-    @field_validator('status')
-    @classmethod
-    def validate_status(cls, v: str) -> str:
-        if v not in ['registered', 'published']:
-            raise ValueError('状态仅支持 registered 或 published')
-        return v
+def validate_agent_card(agent: AgentCard):
+    """验证AgentCard数据（不含status字段，保持业界标准）"""
+    validate_name(agent.name)
+    validate_description(agent.description)
+    validate_version(agent.version)
+    validate_default_input_modes(agent.default_input_modes)
+    validate_default_output_modes(agent.default_output_modes)
+    validate_skills(agent.skills)
+    validate_capabilities(agent.capabilities)
+    validate_provider(agent.provider)
+    validate_supported_interfaces(agent.supported_interfaces)
+
+
+def validate_status(status: str):
+    """验证status字段值（用于agentregistry.json）"""
+    if status not in ['registered', 'published']:
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+            detail='Agent status must be either "registered" or "published"')
 ```
+
+**说明：**
+- AgentCard本身不包含status字段，保持业界标准数据结构
+- status信息存储在独立的agentregistry.json文件中
+- `validate_status`函数用于验证agentregistry.json中的状态值
+- `validate_agent_card`函数不验证status（AgentCard不包含此字段）
+
+#### 3.2.5 core.py修改
+
+新增register_with_status方法和双文件加载/保存逻辑：
+
+```python
+def register_with_status(self, agent: AgentCard, initial_status: str = 'published') -> bool:
+    """注册Agent并设置初始状态"""
+    with self._lock:
+        if self.persistence_mode == 'postgresql':
+            agent.status = initial_status
+            return self.storage.create(agent)
+        else:
+            key = self._make_key(agent.name, agent.provider.organization)
+            self._agents[key] = agent
+            self._status_map[key] = initial_status
+            self._save()
+            return True
+
+def _save(self) -> None:
+    """双文件保存"""
+    self._save_agents()      # agentcard.json（不含status）
+    self._save_registry()    # agentregistry.json（状态映射）
+
+def _load(self) -> None:
+    """双文件加载"""
+    self._load_agents()      # 加载agentcard.json
+    self._load_registry()    # 加载agentregistry.json并关联状态
+```
+
+**关键点：**
+- `_status_map`: Dict[(name, org), status] 存储状态映射
+- AgentCard存储不含status字段
+- 状态通过_status_map关联
 
 #### 3.2.5 start.py修改
 
-启动UDS审核服务：
+启动UDS内部交互服务：
 
 ```python
 def main():
     server_config = get_conf()
     
-    # 启动UDS审核服务（如果审核功能开启）
-    audit_enabled = server_config.get('agent_audit_enabled', 'false')
-    if audit_enabled == 'true':
-        from agent_registry.audit.audit_service import AuditService
-        
-        # 创建审核服务线程
-        audit_service = AuditService()
-        audit_thread = threading.Thread(target=audit_service.start, daemon=True)
-        audit_thread.start()
-        
-        logger.info("Audit service started on UDS socket")
+    # 启动UDS内部交互服务（作为子线程运行）
+    from agent_registry.internal.registry_service import RegistryCenterService
+    
+    # 创建内部交互服务线程
+    internal_service = RegistryCenterService()
+    internal_thread = threading.Thread(target=internal_service.start, daemon=True)
+    internal_thread.start()
+    
+    logger.info("Internal service started on UDS socket: run/registry-center/internal.sock")
     
     # 启动HTTP服务
     ...
@@ -774,31 +1095,43 @@ def main():
 
 ```ini
 # etc/conf/server.conf
-agent_audit_enabled=true
+agent_approval_enabled=true
 ```
 
 **影响：**
 - 新注册的Agent状态为`registered`
 - 需要调用审核接口才能变为`published`
-- UDS审核服务启动并监听
+- UDS内部交互服务启动并监听，可通过`approval` action审核Agent
 
 #### 3.3.2 审核功能关闭时的配置
 
 ```ini
 # etc/conf/server.conf
-agent_audit_enabled=false
+agent_approval_enabled=false
 ```
 
 **影响：**
 - 新注册的Agent直接为`published`状态
-- UDS审核服务不启动
-- 调用审核接口会报错
+- UDS内部交互服务仍然启动
+- 调用`approval` action会报错（审核功能关闭）
 
 ### 3.4 数据持久化
 
-#### 3.4.1 Agent数据存储格式
+系统支持两种持久化存储模式，由`etc/conf/persistence.conf`中的`persistence.mode`配置控制：
 
-**data/agentcard.json：**
+```ini
+# etc/conf/persistence.conf
+# 持久化模式：file / postgresql / sqlite / gauss
+persistence.mode=postgresql
+```
+
+#### 3.4.1 文件存储模式（persistence.mode=file）
+
+**双文件方案说明：**
+
+为保持业界AgentCard数据结构标准，防止后续业界更新status字段后与项目本身的status字段冲突，采用双文件存储方案：
+
+**存储文件1：`data/agentcard.json`** - 存放不带status字段的AgentCard数据（符合业界标准）
 
 ```json
 [
@@ -811,9 +1144,9 @@ agent_audit_enabled=false
     "description": "Test Description",
     "url": "https://agent.test",
     "version": "1.0.0",
-    "status": "registered",  // 新增字段
     "skills": [...],
     ...
+    // 不包含status字段，保持业界标准
   },
   {
     "name": "AnotherAgent",
@@ -821,34 +1154,153 @@ agent_audit_enabled=false
       "organization": "AnotherOrg",
       "url": "https://another.org"
     },
-    "status": "published",  // 新增字段
     ...
+    // 不包含status字段
   }
 ]
 ```
 
-#### 3.4.2 状态兼容性处理
+**存储文件2：`data/agentregistry.json`** - 存放Agent状态映射信息
 
-**启动时加载Agent数据：**
+```json
+[
+  {
+    "organization": "TestOrg",
+    "agent_name": "TestAgent",
+    "status": "registered"
+  },
+  {
+    "organization": "AnotherOrg",
+    "agent_name": "AnotherAgent",
+    "status": "published"
+  }
+]
+```
+
+**文件用途说明：**
+- `agentcard.json`：存储完整的AgentCard数据，不包含status字段，保持业界标准格式
+- `agentregistry.json`：存储Agent的组织名、Agent名和状态映射，用于状态管理
+- 两个文件通过`(organization, agent_name)`组合进行关联
+
+**FileStorage修改要点：**
+
+需要修改`agent_registry/persistence/file_storage.py`：
+
+1. 新增`agentregistry.json`文件的处理逻辑
+2. `_save()`方法：分别保存AgentCard数据（不含status）到agentcard.json，状态信息到agentregistry.json
+3. `_load()`方法：加载时合并两个文件的数据，恢复Agent的完整状态信息
+4. 注册Agent时：同时更新两个文件
+5. 审核Agent时：只更新agentregistry.json中的status字段
+
+**实现示例：**
 
 ```python
-def _load(self):
-    """加载Agent数据"""
-    data_list = load_from_file(self.persistence_file)
+class FileStorage(StorageBackend):
+    def __init__(self, file_path: str, registry_file: str = "data/agentregistry.json"):
+        self.file_path = file_path          # agentcard.json
+        self.registry_file = registry_file  # agentregistry.json
+        self._agents: Dict[tuple, AgentCard] = {}
+        self._status_map: Dict[tuple, str] = {}  # {(name, org): status}
+        self._load()
     
-    for item in data_list:
-        try:
-            # 兼容处理：如果没有status字段，默认为published
-            if 'status' not in item:
-                item['status'] = 'published'
-                logger.info(f"Agent {item['name']} missing status, set to published")
-            
-            agent = AgentCard(**item)
-            key = self._make_key(agent.name, agent.provider.organization)
-            self._agents[key] = agent
-        except Exception as e:
-            logger.error(f"Failed to load agent: {e}")
+    def create(self, agent: AgentCard) -> bool:
+        key = (agent.name.strip(), agent.provider.organization.strip())
+        self._agents[key] = agent
+        self._status_map[key] = agent.status
+        self._save()
+        return True
+    
+    def _save(self) -> None:
+        # 保存agentcard.json（不含status）
+        agent_cards = []
+        for agent in self._agents.values():
+            agent_dict = MessageToDict(agent, preserving_proto_field_name=True)
+            agent_dict.pop('status', None)  # 移除status字段
+            agent_cards.append(agent_dict)
+        
+        with open(self.file_path, 'w', encoding='utf-8') as f:
+            json.dump(agent_cards, f, ensure_ascii=False, indent=2)
+        
+        # 保存agentregistry.json
+        registry_data = []
+        for key, status in self._status_map.items():
+            registry_data.append({
+                "organization": key[1],
+                "agent_name": key[0],
+                "status": status
+            })
+        
+        with open(self.registry_file, 'w', encoding='utf-8') as f:
+            json.dump(registry_data, f, ensure_ascii=False, indent=2)
+    
+    def _load(self) -> None:
+        # 加载agentcard.json
+        if os.path.exists(self.file_path):
+            with open(self.file_path, 'r', encoding='utf-8') as f:
+                agent_cards = json.load(f)
+            for item in agent_cards:
+                agent = AgentCard(**item)
+                key = (agent.name.strip(), agent.provider.organization.strip())
+                self._agents[key] = agent
+        
+        # 加载agentregistry.json并合并状态
+        if os.path.exists(self.registry_file):
+            with open(self.registry_file, 'r', encoding='utf-8') as f:
+                registry_data = json.load(f)
+            for item in registry_data:
+                key = (item['agent_name'], item['organization'])
+                self._status_map[key] = item['status']
+                # 将状态合并到Agent对象
+                if key in self._agents:
+                    self._agents[key].status = item['status']
+        else:
+            # 兼容处理：如果没有agentregistry.json，默认所有Agent为published
+            for key in self._agents.keys():
+                self._status_map[key] = 'published'
 ```
+
+#### 3.4.2 数据库存储模式（persistence.mode=postgresql/sqlite/gauss）
+
+**数据库表结构变更：**
+
+需要修改`agent_registry/persistence/sql_queries.py`，在agent_card表中新增status字段：
+
+```sql
+CREATE TABLE IF NOT EXISTS agent_card (
+    id              SERIAL PRIMARY KEY,
+    name            VARCHAR(100) NOT NULL,
+    organization    VARCHAR(100) NOT NULL,
+    description     VARCHAR(1000),
+    url             VARCHAR(1024),
+    version         VARCHAR(50),
+    status          VARCHAR(20) DEFAULT 'published',  -- 新增字段
+    provider_json   JSONB        NOT NULL,
+    capabilities_json JSONB,
+    skills_json     JSONB,
+    default_input_modes  JSONB,
+    default_output_modes JSONB,
+    agent_card_json JSONB        NOT NULL,
+    created_at      TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    updated_at      TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    UNIQUE(name, organization)
+)
+```
+
+**新增索引：**
+
+```sql
+CREATE INDEX IF NOT EXISTS idx_agent_status ON agent_card(status)
+```
+
+**PostgreSQLStorage修改要点：**
+
+需要修改`agent_registry/persistence/postgresql_storage.py`：
+
+1. `_get_agent_fields()`方法：新增status字段
+2. `create()`方法：插入时包含status字段
+3. `update()`方法：更新时支持status字段变更
+4. 新增`find_by_status()`方法：按状态查询Agent
+5. 新增`count_by_status()`方法：按状态统计Agent数量
 
 ## 4. 测试方案
 
@@ -857,21 +1309,28 @@ def _load(self):
 #### 4.1.1 审核开关配置测试
 
 ```python
-def test_audit_config():
+def test_approval_config():
     """测试审核开关配置"""
     
     # 测试1：默认配置
     init_cmd = InitCommand()
-    assert init_cmd.existing_config.get('agent_audit_enabled') == 'false'
+    assert init_cmd.existing_config.get('agent_approval_enabled') == 'false'
     
     # 测试2：开启审核
-    config = {'agent_audit_enabled': 'true'}
+    config = {'agent_approval_enabled': 'true'}
     init_cmd.save_config_to_file(config)
-    assert get_conf()['agent_audit_enabled'] == 'true'
+    assert get_conf()['agent_approval_enabled'] == 'true'
     
-    # 测试3：尝试关闭已开启的审核（应报错）
+    # 测试3：尝试关闭已开启的审核（存在已注册Agent时应报错）
+    # 模拟存在已注册Agent的场景
+    registry.register(AgentCard(name="Test", status='registered'))
     # 模拟用户输入'n'
-    # 预期：报错，不能关闭
+    # 预期：报错，提示先发布已注册Agent
+    
+    # 测试4：尝试关闭已开启的审核（不存在已注册Agent时应成功）
+    registry.update_status("Test", "Org", 'published')
+    # 模拟用户输入'n'
+    # 预期：成功关闭
 ```
 
 #### 4.1.2 Agent状态测试
@@ -897,33 +1356,63 @@ def test_agent_status():
     assert registry.get_by_key("Test2", "Org").status == 'published'
 ```
 
-#### 4.1.3 UDS接口测试
+#### 4.1.3 查询接口测试
 
 ```python
-def test_audit_uds_interface():
+def test_query_interface():
+    """测试查询接口只返回已发布Agent"""
+    
+    registry = RegistryCore()
+    
+    # 注册一个已发布Agent
+    agent_published = AgentCard(name="PublishedAgent", status='published')
+    registry.register(agent_published)
+    
+    # 注册一个已注册Agent
+    agent_registered = AgentCard(name="RegisteredAgent", status='registered')
+    registry.register(agent_registered)
+    
+    # 测试1：查询所有Agent，只返回已发布Agent
+    result = list_agents()
+    assert len(result) == 1
+    assert result[0].name == "PublishedAgent"
+    
+    # 测试2：按名称查询已注册Agent，返回空
+    result = get_agent("RegisteredAgent", "Org")
+    assert result is None  # 或抛出404异常
+    
+    # 测试3：按名称查询已发布Agent，正常返回
+    result = get_agent("PublishedAgent", "Org")
+    assert result.status == 'published'
+```
+
+#### 4.1.4 UDS接口测试
+
+```python
+def test_approval_uds_interface():
     """测试UDS审核接口"""
     
     # 启动审核服务
-    audit_service = AuditService()
-    audit_thread = threading.Thread(target=audit_service.start, daemon=True)
-    audit_thread.start()
+    internal_service = RegistryCenterService()
+    internal_thread = threading.Thread(target=internal_service.start, daemon=True)
+    internal_thread.start()
     
     # 创建客户端
-    client = AuditClient()
+    client = RegistryClient()
     
     # 测试1：审核功能开启时调用
-    result = client.audit_agent("TestAgent", "TestOrg")
+    result = client.approval_agent("TestAgent", "TestOrg")
     assert result['success'] == True
     assert result['agent']['status'] == 'published'
     
     # 测试2：审核功能关闭时调用（应报错）
-    # 修改配置：agent_audit_enabled=false
-    result = client.audit_agent("TestAgent", "TestOrg")
+    # 修改配置：agent_approval_enabled=false
+    result = client.approval_agent("TestAgent", "TestOrg")
     assert result['success'] == False
-    assert result['error'] == "Audit function is disabled"
+    assert result['error'] == "Approval function is disabled"
 ```
 
-### 4.2 集成测试
+### 4.2 成成测试
 
 #### 4.2.1 完整流程测试
 
@@ -941,23 +1430,23 @@ def test_audit_uds_interface():
      -d '{"name":"TestAgent", ...}'
    
    # 预期响应：
-   {"success":true, "status":"registered", "message":"Agent registered, waiting for audit"}
+   {"success":true, "status":"registered", "message":"Agent registered, waiting for approval"}
    
    # 步骤3：调用审核接口
-   python audit_client.py TestAgent TestOrg
+   python -m agent_registry.internal.client.cli_registry approval TestAgent TestOrg
    
    # 预期响应：
-   {"success":true, "status":"published", "message":"Agent audit successful"}
+   {"success":true, "status":"published", "message":"Agent approval successful"}
    
    # 步骤4：查询Agent
    curl http://localhost:5000/rest/a2a-t/v1/agents/query?name=TestAgent
    
-   # 预期：status="published"
+   # 预期：status="published"，Agent可以被查询到
    ```
 
 2. **审核功能关闭场景**
    ```bash
-   # 步骤1：配置审核功能关闭
+   # 步骤1：配置审核功能关闭（需确保不存在已注册Agent）
    python -m agent_registry.init
    # 输入：n
    
@@ -970,10 +1459,15 @@ def test_audit_uds_interface():
    {"success":true, "status":"published", "message":"Agent registered and published"}
    
    # 步骤3：尝试调用审核接口（应报错）
-   python audit_client.py TestAgent TestOrg
+   python -m agent_registry.internal.client.cli_registry approval TestAgent TestOrg
    
    # 预期响应：
-   {"success":false, "error":"Audit function is disabled"}
+   {"success":false, "error":"Approval function is disabled"}
+   
+   # 步骤4：查询Agent（已发布状态可被查询）
+   curl http://localhost:5000/rest/a2a-t/v1/agents/query?name=TestAgent
+   
+   # 预期：Agent可以被查询到，status="published"
    ```
 
 3. **审核功能从关闭到开启场景**
@@ -989,10 +1483,36 @@ def test_audit_uds_interface():
    # 预期：status="registered"
    
    # 步骤4：查询Agent1
-   # 预期：status仍为"published"（保持原状）
+   # 预期：status仍为"published"（保持原状），可被查询
    
-   # 步骤5：审核Agent2
+   # 步骤5：查询Agent2
+   # 预期：status为"registered"，不会被查询接口返回
+   
+   # 步骤6：审核Agent2
+   # 预期：status变为"published"，可被查询
+   ```
+
+4. **审核功能从开启到关闭场景**
+   ```bash
+   # 步骤1：审核功能开启时注册Agent1
+   # 预期：status="registered"
+   
+   # 步骤2：尝试关闭审核功能（存在已注册Agent）
+   python -m agent_registry.init
+   # 输入：n
+   
+   # 预期：报错，提示先发布已注册Agent
+   
+   # 步骤3：审核Agent1
+   python -m agent_registry.internal.client.cli_registry approval Agent1 Org
+   
    # 预期：status变为"published"
+   
+   # 步骤4：再次尝试关闭审核功能（不存在已注册Agent）
+   python -m agent_registry.init
+   # 输入：n
+   
+   # 预期：成功关闭审核功能
    ```
 
 ### 4.3 安全测试
@@ -1000,15 +1520,15 @@ def test_audit_uds_interface():
 #### 4.3.1 UDS权限测试
 
 ```bash
-# 测试1：普通用户无法访问审核接口
-python audit_client.py TestAgent TestOrg
+# 测试1：普通用户无法访问内部交互接口
+python -m agent_registry.internal.client.cli_registry approval TestAgent TestOrg
 
 # 预期：
-Permission denied: You don't have permission to audit agents
+Permission denied: You don't have permission to access registry center
 
-# 测试2：audit_group组成员可以访问
-sudo usermod -aG audit_group $USER
-python audit_client.py TestAgent TestOrg
+# 测试2：registry_group组成员可以访问
+sudo usermod -aG registry_group $USER
+python -m agent_registry.internal.client.cli_registry approval TestAgent TestOrg
 
 # 预期：成功调用审核接口
 ```
@@ -1016,19 +1536,23 @@ python audit_client.py TestAgent TestOrg
 #### 4.3.2 配置安全测试
 
 ```bash
-# 测试1：尝试关闭已开启的审核功能
+# 测试1：尝试关闭已开启的审核功能（存在已注册Agent）
 python -m agent_registry.init
-# 当前配置：agent_audit_enabled=true
+# 当前配置：agent_approval_enabled=true
+# 存在已注册Agent
 # 输入：n
 
 # 预期：
-错误：审核功能已开启，不能关闭！
+错误：审核功能已开启，不能直接关闭！
+原因：存在"已注册"状态的Agent
 
-# 测试2：篡改配置文件
-echo "agent_audit_enabled=false" >> etc/conf/server.conf
+# 测试2：尝试关闭已开启的审核功能（不存在已注册Agent）
+python -m agent_registry.init
+# 当前配置：agent_approval_enabled=true
+# 不存在已注册Agent（全部已发布）
+# 输入：n
 
-# 启动服务时检查配置一致性
-# 预期：检测到配置不一致，报错或警告
+# 预期：成功关闭审核功能
 ```
 
 ## 5. 运维方案
@@ -1039,10 +1563,10 @@ echo "agent_audit_enabled=false" >> etc/conf/server.conf
 
 ```bash
 # 查看审核开关配置
-cat etc/conf/server.conf | grep agent_audit_enabled
+cat etc/conf/server.conf | grep agent_approval_enabled
 
 # 输出：
-agent_audit_enabled=true
+agent_approval_enabled=true
 ```
 
 #### 5.1.2 修改配置
@@ -1052,34 +1576,37 @@ agent_audit_enabled=true
 python -m agent_registry.init
 # 输入：y
 
-# 注意：不能通过直接修改配置文件关闭审核功能
-# 必须通过init命令检查配置一致性
+# 关闭审核功能（需确保不存在已注册Agent）
+python -m agent_registry.init
+# 输入：n
+
+# 注意：关闭审核功能前需先发布所有已注册状态的Agent
 ```
 
 ### 5.2 Agent状态查询
 
 ```bash
-# 查询所有"已注册"状态的Agent
-curl http://localhost:5000/rest/a2a-t/v1/agents/query?status=registered
+# 查询所有"已发布"状态的Agent（HTTP接口只返回已发布Agent）
+curl http://localhost:5000/rest/a2a-t/v1/agents/query
 
-# 查询所有"已发布"状态的Agent
-curl http://localhost:5000/rest/a2a-t/v1/agents/query?status=published
+# 查询已注册状态的Agent需要通过UDS内部接口
+python -m agent_registry.internal.client.cli_registry stats registered
 ```
 
 ### 5.3 批量审核
 
 ```python
 # 批量审核所有"已注册"状态的Agent
-from agent_registry.audit.audit_client import AuditClient
+from agent_registry.internal.client.registry_client import RegistryClient
 
-client = AuditClient()
+client = RegistryClient()
 
 # 获取所有"已注册"Agent
 registered_agents = registry.get_agents_by_status('registered')
 
 # 批量审核
 for agent in registered_agents:
-    result = client.audit_agent(agent.name, agent.provider.organization)
+    result = client.approval_agent(agent.name, agent.provider.organization)
     print(f"{agent.name}: {result['message']}")
 ```
 
@@ -1089,8 +1616,8 @@ for agent in registered_agents:
 
 ```python
 # 记录审核操作日志
-await audit_handle.handle({
-    "operation_name": OperationName.AUDIT_AGENT,
+await approval_handle.handle({
+    "operation_name": OperationName.APPROVAL_AGENT,
     "level": LogLevel.MINOR,
     "result": OperationResult.SUCCESS,
     "object_name": OperatorObject.AGENT,
@@ -1106,8 +1633,8 @@ await audit_handle.handle({
 #### 5.4.2 审核统计
 
 ```bash
-# 统计Agent状态分布
-curl http://localhost:5000/rest/a2a-t/v1/agents/statistics
+# 统计Agent状态分布（通过UDS内部接口）
+python -m agent_registry.internal.client.cli_registry stats all
 
 # 预期响应：
 {
@@ -1124,28 +1651,41 @@ curl http://localhost:5000/rest/a2a-t/v1/agents/statistics
 1. **审核开关配置**
    - 通过`init.py`交互式配置
    - 配置写入`server.conf`文件
-   - 开启后不能关闭（单向开关）
+   - 配置项名称：`agent_approval_enabled`
+   - 开启后可以关闭，但需检查是否存在已注册Agent
+   - 存在已注册Agent时关闭需先发布这些Agent
 
 2. **Agent状态管理**
    - 新增`status`字段：registered/published
    - 审核开启：注册后为registered，审核后为published
    - 审核关闭：注册后直接为published
+   - HTTP查询接口只返回已发布状态的Agent
 
-3. **UDS审核接口**
-   - Socket路径：`/var/run/agent_audit.sock`
-   - 入参：agent_name + organization
-   - 文件权限实现访问控制
-   - 审核关闭时调用报错
+3. **UDS内部交互接口**
+   - Socket路径：`run/registry-center/internal.sock`（项目目录）
+   - 统一入口，通过action字段区分操作类型
+   - 请求格式：`{"action": "...", "params": {...}}`
+   - 支持approval、config、stats、query等操作
+   - 文件权限实现访问控制（registry_group组）
+   - 审核关闭时approval action报错
+
+4. **持久化存储**
+   - 支持文件存储和数据库存储两种模式
+   - 由`persistence.conf`中的`persistence.mode`配置控制
+   - 文件存储采用双文件方案：agentcard.json（不含status）+ agentregistry.json（状态映射）
+   - 双文件方案保持业界AgentCard数据标准，避免status字段冲突
+   - 数据库存储需新增status列
 
 ### 6.2 安全要点
 
 1. **配置安全**
-   - 审核开关开启后不能关闭
+   - 关闭审核功能时需检查是否存在已注册Agent
+   - 若存在已注册Agent，需先发布或删除这些Agent后再关闭
    - 防止配置不一致导致状态混乱
 
 2. **访问控制**
    - UDS socket文件权限控制访问
-   - 只有audit_group组成员可以审核
+   - 只有registry_group组成员可以访问内部交互服务
 
 3. **状态一致性**
    - 配置变更时保持已存在Agent状态不变
@@ -1163,5 +1703,6 @@ curl http://localhost:5000/rest/a2a-t/v1/agents/statistics
 3. **接口扩展**
    - 可增加批量审核接口
    - 可增加审核历史查询接口
+   - Handler模式易于添加新操作类型
 
-该设计文档详细说明了Agent审核功能的实现方案，包括审核开关配置、Agent状态管理、UDS审核接口设计等，为后续实现提供了完整的设计蓝图。
+该设计文档详细说明了注册中心内部交互服务的实现方案，包括审核开关配置、Agent状态管理、统一UDS内部交互服务设计等，为后续实现提供了完整的设计蓝图。

@@ -252,19 +252,12 @@ async def _perform_registration(
         agent: AgentCard,
         client_ip: str,
         details: dict,
+        initial_status: str = 'published',
 ) -> bool:
     """Execute the actual registration, handle ValueError and other exceptions, log accordingly."""
     try:
         save_handle = HandlerRegistry.get_handler(InterfaceType.INSERT)
-        success = await save_handle.handle(agent)
-        await audit_handle.handle({
-            "operation_name": OperationName.REGISTER_AGENT,
-            "level": LogLevel.MINOR,
-            "result": OperationResult.SUCCESS,
-            "object_name": OperatorObject.AGENT,
-            "details": details,
-            "client_ip": client_ip
-        })
+        success = await save_handle.handle(agent, initial_status=initial_status)
         return success
     except ValueError as e:
         details["message"] = str(e)
@@ -379,10 +372,33 @@ async def register_agent(
         await _check_agent_limit(registry, client_ip, details)
         await _check_duplicate_agent(agent, registry, client_ip, details)
         validate_agent_card(agent)
-        result = await _perform_registration(agent, client_ip, details)
         logger.info(f"Register agent success: name={agent.name}, org={agent.provider.organization}")
+
+        approval_enabled = config.get('agent_approval_enabled', 'false')
+        if approval_enabled == 'true':
+            initial_status = 'registered'
+            status_message = "Agent registered, waiting for approval"
+        else:
+            initial_status = 'published'
+            status_message = "Agent registered and published"
+
+        result = await _perform_registration(agent, client_ip, details, initial_status=initial_status)
+
+        await audit_handle.handle({
+            "operation_name": OperationName.REGISTER_AGENT,
+            "level": LogLevel.MINOR,
+            "result": OperationResult.SUCCESS if result else OperationResult.FAILURE,
+            "object_name": OperatorObject.AGENT,
+            "details": details,
+            "client_ip": client_ip
+        })
+
         return JSONResponse(
-            content=result,
+            content={
+                "success": result,
+                "status": initial_status,
+                "message": status_message
+            },
             status_code=status.HTTP_201_CREATED,
         )
     except anyio.WouldBlock as e:
@@ -401,11 +417,13 @@ async def list_agents_exact(
         request: Request,
         name: Optional[str] = Query(None, description="Exact agent name"),
         organization: Optional[str] = Query(None, description="Exact organization"),
+        registry: RegistryCore = Depends(get_registry),
         _: Any = Depends(RateLimiter('query')),
 ):
     """
     Search agents by exact fields (AND combination).
     All parameters are optional. If none provided, returns all agents.
+    Only returns agents with published status, response does not include status field.
     """
     client_ip = request.client.host
     logger.info(f"Query agents request: name={name}, org={organization}, client={client_ip}")
@@ -418,9 +436,16 @@ async def list_agents_exact(
         try:
             query_handle = HandlerRegistry.get_handler(InterfaceType.QUERY)
             agents = await query_handle.handle(name, organization)
-            result = [MessageToDict(card, preserving_proto_field_name=True) for card in agents]
-            logger.info(f"Query agents result: {len(result)} agents found")
-            return result
+
+            published_agents = []
+            for agent in agents:
+                status = registry.get_status(agent.name, agent.provider.organization)
+                if status != 'published':
+                    continue
+                agent_dict = MessageToDict(agent, preserving_proto_field_name=True)
+                published_agents.append(agent_dict)
+            logger.info(f"Query agents result: {len(published_agents)} agents found")
+            return published_agents
         except Exception as e:
             logger.error(f"Error in exact search: {e}")
             raise HTTPException(
@@ -582,10 +607,12 @@ async def retrieve_agents_by_task(
 async def get_agent(
         request: Request,
         name: str,
-        organization: str, _: Any = Depends(RateLimiter('get'))
+        organization: str, _: Any = Depends(RateLimiter('get')),
+        registry: RegistryCore = Depends(get_registry),
 ):
     """
     Search a single agent by its unique key(name and organization).
+    Only returns agents with published status, response does not include status field.
     """
     client_ip = request.client.host
     logger.info(f"Get agent request: name={name}, org={organization}, client={client_ip}")
@@ -598,9 +625,17 @@ async def get_agent(
         try:
             get_handle = HandlerRegistry.get_handler(InterfaceType.GET)
             agent = await get_handle.handle(name, organization)
-            result = MessageToDict(agent, preserving_proto_field_name=True) if agent is not None else None
-            logger.info(f"Get agent result: {'found' if result else 'not found'} for name={name}, org={organization}")
-            return result
+
+            if agent is None:
+                return None
+
+            status = registry.get_status(name, organization)
+            if status != 'published':
+                return None
+
+            agent_dict = MessageToDict(agent, preserving_proto_field_name=True)
+            logger.info(f"Get agent result: {'found' if agent_dict else 'not found'} for name={name}, org={organization}")
+            return agent_dict
         except Exception as e:
             logger.error(f"Error in get agent: {e}")
             raise HTTPException(

@@ -1,8 +1,10 @@
 import os
+import sys
 from pathlib import Path
 
 from cryptography import x509
 from cryptography.hazmat.primitives import serialization
+from loguru import logger
 
 from common.cert.cert_parser import parse_cer_certificate, parse_pem_files
 from common.util.cipher_util import encrypt, DEFAULT_ENCODING
@@ -71,6 +73,41 @@ class InitCommand:
             config['signature_validation_enabled'] = 'true'
         else:
             config['signature_validation_enabled'] = default_signature
+
+        default_approval = self.existing_config.get('agent_approval_enabled', 'false')
+        current_approval = default_approval
+        approval_input = input(
+            f"Enable agent approval (y/n, default: {default_approval}): "
+        ).strip().lower()
+        
+        if approval_input == 'n':
+            if current_approval == 'true':
+                from agent_registry.registry_instance import get_registry
+                registry = get_registry()
+                registered_agents = []
+                for agent in registry.find_all():
+                    if hasattr(agent, 'status') and agent.status == 'registered':
+                        registered_agents.append(agent)
+                
+                if registered_agents:
+                    print("Error: Approval function is enabled, cannot disable directly!")
+                    print(f"Reason: There are {len(registered_agents)} agents in 'registered' status")
+                    print("Suggestions:")
+                    print("  1. Publish these agents via approval interface first")
+                    print("  2. Or delete these agents via deregister interface")
+                    print("  3. Disable approval function after processing")
+                    sys.exit(1)
+                else:
+                    config['agent_approval_enabled'] = 'false'
+                    print("Approval function disabled")
+            else:
+                config['agent_approval_enabled'] = 'false'
+                print("Approval function disabled")
+        elif approval_input == 'y':
+            config['agent_approval_enabled'] = 'true'
+            print("Approval function enabled")
+        else:
+            config['agent_approval_enabled'] = default_approval
 
         self.save_config_to_file(config)
 

@@ -51,7 +51,8 @@ class AuthenticateHandler(BaseHandler):
 class InsertHandler(BaseHandler):
 
     async def handle(self, *args, **kwargs):
-        return get_registry().register(*args)
+        initial_status = kwargs.get('initial_status', 'published')
+        return get_registry().register_with_status(*args, initial_status=initial_status)
 
 
 class QueryHandler(BaseHandler):

@@ -25,6 +25,7 @@ class PostgreSQLQueries(str, Enum):
             description     VARCHAR(1000),
             url             VARCHAR(1024),
             version         VARCHAR(50),
+            status          VARCHAR(20) DEFAULT 'published',
             provider_json   JSONB        NOT NULL,
             capabilities_json JSONB,
             skills_json     JSONB,
@@ -39,13 +40,14 @@ class PostgreSQLQueries(str, Enum):
 
     CREATE_INDEX_ORG = "CREATE INDEX IF NOT EXISTS idx_agent_org ON agent_card(organization)"
     CREATE_INDEX_NAME = "CREATE INDEX IF NOT EXISTS idx_agent_name ON agent_card(name)"
+    CREATE_INDEX_STATUS = "CREATE INDEX IF NOT EXISTS idx_agent_status ON agent_card(status)"
     CREATE_INDEX_GIN = "CREATE INDEX IF NOT EXISTS idx_agent_card_json ON agent_card USING GIN(agent_card_json)"
 
     CREATE_AGENT = """
-        INSERT INTO agent_card (name, organization, description, url, version, provider_json,
+        INSERT INTO agent_card (name, organization, description, url, version, status, provider_json,
                                 capabilities_json, skills_json, default_input_modes, default_output_modes,
                                 agent_card_json, created_at, updated_at)
-        VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
+        VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
         ON CONFLICT (name, organization) DO NOTHING
     """
 
@@ -62,10 +64,19 @@ class PostgreSQLQueries(str, Enum):
         SELECT agent_card_json FROM agent_card WHERE organization = %s
     """
 
+    FIND_BY_STATUS = """
+        SELECT agent_card_json FROM agent_card WHERE status = %s
+    """
+
     FIND_ALL = "SELECT agent_card_json FROM agent_card"
 
     UPDATE_AGENT = """
         UPDATE agent_card SET agent_card_json = %s, updated_at = %s
+        WHERE name = %s AND organization = %s
+    """
+
+    UPDATE_STATUS = """
+        UPDATE agent_card SET status = %s, updated_at = %s
         WHERE name = %s AND organization = %s
     """
 
@@ -74,3 +85,5 @@ class PostgreSQLQueries(str, Enum):
     """
 
     COUNT = "SELECT COUNT(*) FROM agent_card"
+
+    COUNT_BY_STATUS = "SELECT COUNT(*) FROM agent_card WHERE status = %s"

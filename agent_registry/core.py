@@ -51,6 +51,7 @@ class RegistryCore:
         self.persistence_conf = persistence_conf
         self.storage: Optional[StorageBackend] = None
         self._lock = Lock()
+        self._status_map: Dict[Tuple[str, str], str] = {}
 
         if use_vectordb:
             self.vectordb = get_or_create_vectordb_tool_instance(get_vectordb_config_by_type(VectorDBType.Milvus))
@@ -64,6 +65,7 @@ class RegistryCore:
             data_path.mkdir(exist_ok=True)
             os.chmod(data_path, 0o700)
             self.persistence_file = str(data_path / persistence_file)
+            self.registry_file = str(data_path / "agentregistry.json")
             self._agents: Dict[Tuple[str, str], AgentCard] = {}
             self._load()
 
@@ -107,8 +109,44 @@ class RegistryCore:
             else:
                 key = self._make_key(agent.name, agent.provider.organization)
                 self._agents[key] = agent
+                self._status_map[key] = 'published'
                 self._save()
                 logger.info(f"Registered agent: {agent.name} (org={agent.provider.organization})")
+                return True
+
+    def register_with_status(self, agent: AgentCard, initial_status: str = 'published', 
+                             use_vectordb: bool = USE_VECTORDB) -> bool:
+        """
+        Register a new agent with specified initial status.
+        
+        Args:
+            agent: Agent to register
+            initial_status: Initial status ('registered' or 'published')
+            use_vectordb: Whether to use vector database
+        
+        Returns:
+            bool: True if successful, False if duplicate
+        """
+        with self._lock:
+            if use_vectordb:
+                entity_str = json.dumps(MessageToDict(agent, preserving_proto_field_name=True))
+                embedding = self.embedding_tool.embed(agent.description)
+                id = self._make_id(agent.name, agent.provider.organization)
+                insert_entity = {"embedding": embedding, "id": id, "name": agent.name, 
+                                 "description": agent.description,
+                                 "organization": agent.provider.organization, 
+                                 "agent_card": entity_str, "status": initial_status}
+                insert_data = {"collection_name": COLLECTION_NAME, "entity": insert_entity}
+                return self.vectordb.insert_entity(insert_data)
+            elif self.persistence_mode == 'postgresql':
+                agent.status = initial_status
+                return self.storage.create(agent)
+            else:
+                key = self._make_key(agent.name, agent.provider.organization)
+                self._agents[key] = agent
+                self._status_map[key] = initial_status
+                self._save()
+                logger.info(f"Registered agent: {agent.name} (org={agent.provider.organization}, status={initial_status})")
                 return True
 
     def find_exact(self, name: Optional[str] = None, organization: Optional[str] = None,
@@ -316,12 +354,37 @@ class RegistryCore:
             return self._agents.get(key)
 
     def _save(self) -> None:
-        """Persist current agents to file."""
-        data = [MessageToDict(agent, preserving_proto_field_name=True) for agent in self._agents.values()]
+        """Persist current agents and status map to files."""
+        self._save_agents()
+        self._save_registry()
+
+    def _save_agents(self) -> None:
+        """Persist agents to agentcard.json (without status)."""
+        data = []
+        for agent in self._agents.values():
+            agent_dict = MessageToDict(agent, preserving_proto_field_name=True)
+            agent_dict.pop('status', None)
+            data.append(agent_dict)
         save_to_file(self.persistence_file, data)
 
+    def _save_registry(self) -> None:
+        """Persist status map to agentregistry.json."""
+        registry_data = []
+        for key, status in self._status_map.items():
+            registry_data.append({
+                "organization": key[1],
+                "agent_name": key[0],
+                "status": status
+            })
+        save_to_file(self.registry_file, registry_data)
+
     def _load(self) -> None:
-        """Load agents from file and populate the dictionary."""
+        """Load agents and status map from files."""
+        self._load_agents()
+        self._load_registry()
+
+    def _load_agents(self) -> None:
+        """Load agents from agentcard.json."""
         data_list = load_from_file(self.persistence_file)
         for item in data_list:
             try:
@@ -332,5 +395,104 @@ class RegistryCore:
                 logger.error(f"Failed to load agent from JSON: {e}, data: {item}")
         logger.info(f"Loaded {len(self._agents)} agents from persistence.")
 
+    def _load_registry(self) -> None:
+        """Load status map from agentregistry.json."""
+        if os.path.exists(self.registry_file):
+            registry_data = load_from_file(self.registry_file)
+            for item in registry_data:
+                try:
+                    key = self._make_key(item['agent_name'], item['organization'])
+                    self._status_map[key] = item['status']
+                except Exception as e:
+                    logger.error(f"Failed to load status from JSON: {e}, data: {item}")
+            logger.info(f"Loaded {len(self._status_map)} status mappings from registry.")
+        else:
+            for key in self._agents.keys():
+                self._status_map[key] = 'published'
+            logger.info("No registry file found, defaulting all agents to published status")
+
     def _make_id(self, name: str, organization: str):
         return name + organization
+
+    def find_by_key(self, name: str, organization: str) -> Optional[AgentCard]:
+        """Search a single agent by exact name and organization."""
+        if self.persistence_mode == 'postgresql':
+            return self.storage.find_by_key(name, organization)
+        else:
+            key = self._make_key(name, organization)
+            return self._agents.get(key)
+
+    def find_all(self) -> List[AgentCard]:
+        """Get all agents."""
+        if self.persistence_mode == 'postgresql':
+            return self.storage.find_all()
+        else:
+            return list(self._agents.values())
+
+    def get_status(self, name: str, organization: str) -> str:
+        """Get agent status from status map."""
+        if self.persistence_mode == 'postgresql':
+            agent = self.storage.find_by_key(name, organization)
+            if agent:
+                return getattr(agent, 'status', 'published')
+            return None
+        else:
+            key = self._make_key(name, organization)
+            return self._status_map.get(key)
+
+    def update_status(self, name: str, organization: str, new_status: str) -> bool:
+        """
+        Update agent status.
+        
+        Args:
+            name: Agent name
+            organization: Organization name
+            new_status: New status (registered/published)
+        
+        Returns:
+            bool: Whether update was successful
+        """
+        with self._lock:
+            if self.persistence_mode == 'postgresql':
+                agent = self.storage.find_by_key(name, organization)
+                if not agent:
+                    logger.warning(f"Agent not found: {name} ({organization})")
+                    return False
+                
+                return self.storage.update_status(name, organization, new_status)
+            else:
+                key = self._make_key(name, organization)
+                if key not in self._agents:
+                    logger.warning(f"Agent not found: {name} ({organization})")
+                    return False
+                
+                self._status_map[key] = new_status
+                self._save_registry()
+                logger.info(f"Agent status updated: {name} -> {new_status}")
+                return True
+
+    def get_agents_by_status(self, status: str) -> List[AgentCard]:
+        """
+        Get agents by status.
+        
+        Args:
+            status: Agent status (registered/published)
+        
+        Returns:
+            List[AgentCard]: List of agents with specified status
+        """
+        if self.persistence_mode == 'postgresql':
+            return self.storage.find_by_status(status)
+        else:
+            result = []
+            for key, agent in self._agents.items():
+                if key in self._status_map and self._status_map[key] == status:
+                    result.append(agent)
+            return result
+
+    def count(self) -> int:
+        """Get total number of agents."""
+        if self.persistence_mode == 'postgresql':
+            return self.storage.count()
+        else:
+            return len(self._agents)

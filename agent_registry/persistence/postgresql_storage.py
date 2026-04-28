@@ -87,6 +87,7 @@ class PostgreSQLStorage(StorageBackend):
                 cur.execute(PostgreSQLQueries.CREATE_TABLE.value)
                 cur.execute(PostgreSQLQueries.CREATE_INDEX_ORG.value)
                 cur.execute(PostgreSQLQueries.CREATE_INDEX_NAME.value)
+                cur.execute(PostgreSQLQueries.CREATE_INDEX_STATUS.value)
                 cur.execute(PostgreSQLQueries.CREATE_INDEX_GIN.value)
                 logger.info("Table 'agent_card' and indexes created/verified")
         finally:
@@ -95,12 +96,14 @@ class PostgreSQLStorage(StorageBackend):
     def _get_agent_fields(self, agent: AgentCard) -> tuple:
         agent_dict = MessageToDict(agent, preserving_proto_field_name=True)
         now = datetime.utcnow()
+        status = getattr(agent, 'status', 'published')
         return (
             agent.name,
             agent.provider.organization,
             agent_dict.get('description'),
             agent_dict.get('documentation_url'),
             agent_dict.get('version'),
+            status,
             json.dumps(agent_dict.get('provider', {})),
             json.dumps(agent_dict.get('capabilities', {})) if agent_dict.get('capabilities') else None,
             json.dumps(agent_dict.get('skills', [])) if agent_dict.get('skills') else None,
@@ -228,6 +231,47 @@ class PostgreSQLStorage(StorageBackend):
         try:
             with conn.cursor() as cur:
                 cur.execute(PostgreSQLQueries.COUNT.value)
+                result = cur.fetchone()
+            return result[0] if result else 0
+        finally:
+            self.pool.putconn(conn)
+
+    def find_by_status(self, status: str) -> List[AgentCard]:
+        conn = self.pool.getconn()
+        try:
+            with conn.cursor() as cur:
+                cur.execute(
+                    PostgreSQLQueries.FIND_BY_STATUS.value,
+                    (status,)
+                )
+                rows = cur.fetchall()
+            return [AgentCard(**(r[0] if isinstance(r[0], dict) else json.loads(r[0]))) for r in rows]
+        finally:
+            self.pool.putconn(conn)
+
+    def update_status(self, name: str, organization: str, new_status: str) -> bool:
+        conn = self.pool.getconn()
+        try:
+            with conn.cursor() as cur:
+                now = datetime.utcnow()
+                cur.execute(
+                    PostgreSQLQueries.UPDATE_STATUS.value,
+                    (new_status, now, name, organization)
+                )
+                conn.commit()
+                affected = cur.rowcount
+            return affected > 0
+        finally:
+            self.pool.putconn(conn)
+
+    def count_by_status(self, status: str) -> int:
+        conn = self.pool.getconn()
+        try:
+            with conn.cursor() as cur:
+                cur.execute(
+                    PostgreSQLQueries.COUNT_BY_STATUS.value,
+                    (status,)
+                )
                 result = cur.fetchone()
             return result[0] if result else 0
         finally:
