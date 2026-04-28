@@ -1,135 +1,161 @@
-# 注册中心功能简介
+# 注册中心用户手册
 
-注册中心是一个专注于 Agent 统一管理的服务，支持用户将来自不同厂商的 Agent 进行集中注册与管理，实现多源 Agent
-的可控接入与维护。主要功能包括：
+## 1 注册中心功能简介
+注册中心是一个专注于Agent统一管理的服务，支持用户将来自不同厂商的Agent进行集中注册与管理，实现多源Agent的可控接入与维护。主要功能包括：
 
-- **Agent 注册**：支持将不同厂商的 Agent 注册到中心，统一纳管。
-- **条件查询**：根据指定条件查询符合条件的 Agent 列表。
-- **信息修改**：支持按名称修改已注册 Agent 的配置或元信息。
-- **注销 Agent**：按名称注销不再使用的 Agent。
-- **语义检索**：根据自然语言语义检索相匹配的 Agent，提升查找灵活性。
-- **唯一查找**：按 Agent 名称精确查找唯一的 Agent 实例。
+- **Agent注册**：支持将不同厂商的Agent注册到中心，统一纳管。
+- **批量查询**：根据指定条件查询符合条件的Agent列表。
+- **语义检索**：根据自然语言语义检索相匹配的Agent，提升查找灵活性。
+- **唯一查找**：按 Agent 名称精确查找唯一的Agent实例。
+- **Agent修改**：支持按名称修改已注册Agent的配置或元信息。
+- **注销Agent**：按名称注销不再使用的Agent。
 
 通过这些功能，注册中心帮助用户高效整合、维护与发现各类 Agent，为上层编排与协同提供基础能力。
 
-# 组件交互接口定义
+## 2 组件交互接口定义
 
-## 1. Agent注册
+### 2.1 Agent注册
 
-### 1.1 接口名称
+#### 2.1.1 典型场景
 
-注册新的Agent
+运营商或设备厂商需要注册新AgentCard时，可通过调用该接口在注册中心组件中创建新的AgentCard信息
 
-### 1.2 接口描述
+#### 2.1.2 接口功能
 
-向A2A服务注册一个新的Agent，提交Agent的完整配置信息。
+- 注册指定AgentCard信息到注册中心
 
-**✅ 响应模型：** bool - 注册成功返回 true
+#### 2.1.3 接口约束
 
-### 1.3 请求信息
+- 单次注册AgentCard信息报文大小不得超过1024K
+- 单实例上该接口最大并发数为50
 
-#### 1.3.1 请求方法
+#### 2.1.4 调用方法
 
 POST
 
-#### 1.3.2 请求路径
+#### 2.1.5 URI
 
 /rest/a2a-t/v1/agents/register
 
-#### 1.3.3 请求头（Headers）
+#### 2.1.6 请求参数
 
-| 参数名          | 类型     | 必填 | 说明                   |
-|--------------|--------|----|----------------------|
-| Content-Type | string | 是  | 必须为 application/json |
+- body参数列表 详细请参见表：provider对象的参数列表
 
-#### 1.3.4 请求参数（Body）
+AgentCard结构说明：
 
-**📋 AgentCard 结构说明：** AgentCard 是 A2A 协议中定义的标准 Agent 信息卡片，包含 Agent 的基本信息、能力、技能、接口等完整描述。
+| 字段路径                    | 类型                        | 必填 | 说明                                                                               |
+|:------------------------|:--------------------------|:---|:---------------------------------------------------------------------------------|
+| `name`                  | string                    | 是  | 最大长度：100 字符；格式要求：仅允许字母、数字、下划线（_）和空格；正则表达式：`^[a-zA-Z0-9_]+(?:\s+[a-zA-Z0-9_]+)*$` |
+| `description`           | string                    | 是  | 最大长度：1000 字符                                                                     |
+| `supported_interfaces`  | list[AgentInterface]      | 是  |                                                                                  |
+| `version`               | string                    | 是  | 最大长度：50 字符                                                                       |
+| `provider`              | AgentProvider             | 是  |                                                                                  |
+| `capabilities`          | AgentCapabilities         | 是  |                                                                                  |
+| `skills`                | list[AgentSkill]          | 是  | 最大数量：100 个技能；每个技能的 JSON 序列化后最大长度：4096 字符                                         |
+| `default_input_modes`   | list[str]                 | 否  | 最大数量：100 个                                                                       |
+| `default_output_modes`  | list[str]                 | 否  | 最大数量：100 个                                                                       |
+| `documentation_url`     | string                    | 否  |                                                                                  |
+| `icon_url`              | string                    | 否  |                                                                                  |
+| `security_schemes`      | map(str, SecurityScheme)  | 否  |                                                                                  |
+| `security_requirements` | list[SecurityRequirement] | 否  | 操作所需的认证要求列表                                                                      |
+| `signatures`            | list[AgentCardSignature]  | 否  | 用于验证的加密签名                                                                        
 
-### 1.4 字段校验规则
+**AgentInterface结构说明：**
 
-以下为所有请求字段的详细校验规则，不符合规则的请求将返回 422 Unprocessable Content 错误。
+| 字段名                | 类型     | 必填 | 说明                                                                           |
+|:-------------------|:-------|:---|:-----------------------------------------------------------------------------|
+| `url`              | string | 是  | 接口的基础 URL 地址；最大长度：1024 字符；必须为有效的 Web URL 格式                                  |
+| `protocol_binding` | string | 是  | 协议绑定标识，表示该接口使用的传输协议（如 `"JSONRPC"`、`"GRPC"`、`HTTP+JSON`/`"REST"`）；最大长度：100 字符 |
+| `protocol_version` | string | 否  | A2A 协议版本号，表示该接口支持的 A2A 协议版本（如 `"1.0"` 或 `"1.0.0"`）；                          |
+| `tenant`           | string | 否  | 多租户场景下的租户标识符，用于在调用 Agent 时设置租户信息；                                            |
 
-#### 1.4.1 Agent 基本信息字段
+**AgentProvider结构说明：**
 
-| 字段名         | 类型     | 必填 | 限制说明                                                                                       |
-|-------------|--------|----|--------------------------------------------------------------------------------------------|
-| name        | string | 是  | **校验规则：** 最大长度：100 字符；格式要求：仅允许字母、数字、下划线（_）和空格；正则表达式：`^[a-zA-Z0-9_]+(?:\s+[a-zA-Z0-9_]+)*$` |
-| description | string | 是  | **校验规则：** 最大长度：1000 字符                                                                     |
-| version     | string | 是  | **校验规则：** 最大长度：50 字符                                                                       |
+| 字段名            | 类型     | 必填 | 说明                                                                         |
+|:---------------|:-------|:---|:---------------------------------------------------------------------------|
+| `organization` | string | 是  | Agent 提供商的组织名称；最大长度：100 字符；不能为空；禁止包含危险字符（如 `<`、`>`、`&` 等注入风险字符）            |
+| `url`          | string | 否  | Agent 提供商组织的官方网站链接；最大长度：1024 字符；必须为有效的 Web URL 格式（如 `https://example.com`） |
 
-#### 1.4.2 Provider（提供商信息）字段
+**AgentCapabilities结构说明：**
 
-| 字段名                   | 类型     | 必填 | 限制说明                                                            |
-|-----------------------|--------|----|-----------------------------------------------------------------|
-| provider.organization | string | 是  | **校验规则：** 不能为空，必须提供非空字符串；最大长度：100 字符；禁止包含危险字符（见下方危险字符列表）        |
-| provider.url          | string | 否  | **校验规则：** 最大长度：1024 字符；必须为有效的 Web URL 格式；示例：https://example.com |
+| 字段名                  | 类型                   | 必填 | 说明                                                                                            |
+|:---------------------|:---------------------|:---|:----------------------------------------------------------------------------------------------|
+| `streaming`          | boolean              | 否  | 是否支持流式传输。如果为 `true`，Agent 能够通过 Server-Sent Events (SSE) 实时返回响应内容；如果为 `false` 或未提供，则仅支持一次性同步响应 |
+| `push_notifications` | boolean              | 否  | 是否支持推送通知。如果为 `true`，Agent 能够主动向客户端发送任务状态更新和产物通知；需要配合 `PushNotificationConfig` 进行配置            |
+| `state_partial`      | boolean              | 否  | 是否支持部分状态更新。如果为 `true`，Agent 能够在任务执行过程中返回中间状态，而不仅仅是最终结果 (final)；适用于长耗时任务的进度展示                  |
+| `interruptible`      | boolean              | 否  | 是否支持任务中断。如果为 `true`，客户端可以发送取消请求来终止正在执行的任务；如果为 `false`，任务一旦启动将无法被取消                            |
+| `extensions`         | list[AgentExtension] | 否  | 支持的扩展能力列表。用于声明 Agent 实现的 A2A 协议扩展特性；最大数量：10 个扩展；每个扩展的 JSON 序列化后最大长度：512 字符                    |
 
-#### 1.4.3 Skills（技能列表）字段
+**AgentExtension结构说明：**
 
-| 字段名    | 类型               | 必填 | 限制说明                                               |
-|--------|------------------|----|----------------------------------------------------|
-| skills | list[AgentSkill] | 否  | **校验规则：** 最大数量：100 个技能；每个技能的 JSON 序列化后最大长度：4096 字符 |
+| 字段名           | 类型      | 必填    | 说明                                                                                     |
+|:--------------|:--------|:------|:---------------------------------------------------------------------------------------|
+| `uri`         | string  | **是** | 扩展的唯一标识符，必须是版本化的 URI 格式（如 `https://example.com/ext/my-extension/v1`），用于全局唯一标识该扩展；      |
+| `description` | string  | 否     | 扩展功能的人类可读说明，描述 Agent 如何使用此扩展；**最大长度：1000 字符** [citation:2][citation:10]                |
+| `required`    | boolean | 否     | 表示客户端是否必须支持此扩展。如果为 `true`，客户端**必须**理解并激活该扩展，否则 Agent 将拒绝处理请求；如果为 `false` 或未提供，该扩展为可选能力 |
+| `params`      | object  | 否     | 扩展的特定配置参数或发现参数，用于传递扩展初始化所需的额外信息；具体结构由扩展 URI 定义的规范决定；                                   |
 
-#### 1.4.4 Capabilities（能力配置）字段
+**AgentSkill结构说明：**
 
-| 字段名                     | 类型                   | 必填 | 限制说明                                             |
-|-------------------------|----------------------|----|--------------------------------------------------|
-| capabilities.extensions | list[AgentExtension] | 否  | **校验规则：** 最大数量：10 个扩展；每个扩展的 JSON 序列化后最大长度：512 字符 |
+| 字段名            | 类型           | 必填 | 说明                                                         |
+|:---------------|:-------------|:---|:-----------------------------------------------------------|
+| `id`           | string       | 是  | 技能的唯⼀标识符，⽤于在 AgentCard 中区分不同技能                             |
+| `name`         | string       | 是  | 技能的⼈类可读名称，展示给最终用户的技能标题                                     |
+| `description`  | string       | 是  | 技能的详细功能说明，帮助客户理解该技能的具体作用和适用场景                              |
+| `tags`         | list[string] | 是  | ⽤于分类和发现的关键词标签，便于客户端按类别检索和匹配技能                              |
+| `examples`     | list[string] | 否  | 示例提示或⽤例说明，帮助用户或客户端理解如何使用该技能                                |
+| `input_modes`  | list[string] | 否  | ⽀持的输⼊媒体类型列表（MIME 类型），如 `"text/plain"`、`"application/json"` |
+| `output_modes` | list[string] | 否  | ⽀持的输出媒体类型列表（MIME 类型），如 `"text/plain"`、`"application/json"` |
 
-#### 1.4.5 Supported Interfaces（支持接口列表）字段
+#### 2.1.7 请求示例
 
-| 字段名                  | 类型                   | 必填 | 限制说明                                                         |
-|----------------------|----------------------|----|--------------------------------------------------------------|
-| supported_interfaces | list[AgentInterface] | 否  | **校验规则：** 每个接口的 URL 最大长度：1024 字符；每个接口的 URL 必须为有效的 Web URL 格式 |
+POST /rest/a2a-t/v1/agents/register HTTP/1.1
 
-#### 1.4.6 Input/Output Modes（输入输出模式）字段
+Host： your-domain.com
 
-| 字段名                  | 类型        | 必填 | 限制说明                 |
-|----------------------|-----------|----|----------------------|
-| default_input_modes  | list[str] | 否  | **校验规则：** 最大数量：100 个 |
-| default_output_modes | list[str] | 否  | **校验规则：** 最大数量：100 个 |
+Content-Type： application/json
 
-#### 1.4.7 危险字符列表
-
-以下字符在 provider.organization 字段中被禁止使用：
-
-| 字符/范围             | 说明               |
-|-------------------|------------------|
-| `[\x00-\x1F]`     | 控制字符（ASCII 0-31） |
-| `\x7F`            | DEL 删除字符         |
-| `[\x80-\x9F]`     | C1 控制字符          |
-| `\u2028`          | 行分隔符             |
-| `\u2029`          | 段落分隔符            |
-| `\u202D`          | 从左到右覆盖           |
-| `\u202E`          | 从右到左覆盖           |
-| `\u200B`          | 零宽空格             |
-| `\u200C`          | 零宽非连接符           |
-| `\u200D`          | 零宽连接符            |
-| `\uFEFF`          | 零宽无中断空格          |
-| `[\u2066-\u2069]` | 方向性格式化字符         |
-
-### 1.5 请求示例
-
-#### 1.5.1 完整请求示例
+body体：
 
 ```json
 {
-  "name": "TestAgent",
-  "description": "这是一个TestAgent",
+  "name": "RAN Energy Saving Agent",
+  "description": "负责RAN能效优化的自主闭环运行，包括意图探索、意图实现、效果评估与报告。",
   "version": "1.0.0",
   "provider": {
-    "organization": "AI Solutions Inc.",
-    "url": "https://test.example.com"
+    "organization": "Huawei",
+    "url": ""
   },
   "skills": [
     {
-      "name": "Test1",
-      "description": "Test1"
+      "id": "ran-es-intent-exploration",
+      "name": "RAN ES Intent Exploration",
+      "description": "评估并确定指定RAN ES意图目标的最佳可能性，考虑当前资源状况和系统能力。",
+      "tags": [
+        "wireless",
+        "energy-saving",
+        "intent"
+      ]
     },
     {
-      "name": "Test2",
-      "description": "Test2"
+      "id": "ran-es-intent-lifecycle-management",
+      "name": "RAN ES Intent Lifecycle Management",
+      "description": "管理RAN节能意图的生命周期，包括创建、修改、删除、激活、去激活意图，并执行数据采集、分析、解决方案制定与配置。",
+      "tags": [
+        "wireless",
+        "energy-saving",
+        "intent"
+      ]
+    },
+    {
+      "id": "ran-es-intent-reporting",
+      "name": "RAN ES Intent Reporting",
+      "description": "提供意图报告查询、订阅、通知功能，报告意图实现状态、达成值、推荐值及配置修改信息。",
+      "tags": [
+        "wireless",
+        "energy-saving",
+        "reporting"
+      ]
     }
   ],
   "capabilities": {
@@ -160,35 +186,21 @@ POST
 }
 ```
 
-### 1.6 响应信息
+#### 2.1.8 响应参数
 
-#### 1.6.1 成功响应
+| 参数名称 | 类型      | 参数值域 | 默认值 | 参数说明 | 参数示例 |
+|------|---------|------|-----|------|------|
+| -    | boolean | true | -   | xxx  | true |
 
-**状态码：** 201 Created
+#### 2.1.9 响应示例
 
-**响应类型：** boolean
+- 返回状态码201：创建成功
 
+```json
 true
-
-#### 1.6.2 错误响应示例
-
-**名称格式错误（422）**
-
-```json
-{
-  "detail": "The name can contain only letters, digits, underscores (_), spaces."
-}
 ```
 
-**名称超长（422）**
-
-```json
-{
-  "detail": "The agent name can contain a maximum of 100 characters."
-}
-```
-
-**描述超长（422）**
+- 返回状态码422：创建失败
 
 ```json
 {
@@ -196,162 +208,138 @@ true
 }
 ```
 
-**Provider 组织名称为空（422）**
+- 返回状态码409：创建失败
 
 ```json
 {
-  "detail": "Agent provider organization is required and cannot be empty."
+  "detail": "Agent registration limit exceeded."
 }
 ```
-
-**Provider URL 格式无效（422）**
 
 ```json
 {
-  "detail": "Provider URL must be a valid web URL."
+  "detail": "Registration skipped: duplicate agent ({agent.name}, {agent.provider.organization})"
 }
 ```
 
-**技能数量超限（422）**
+### 2.2 批量查询
 
-```json
-{
-  "detail": "The agent can contain a maximum of 100 skills"
-}
-```
+#### 2.2.1 典型场景
 
-**扩展数量超限（422）**
+- 当同时提供name和organization参数时，返回同时满足两个条件的Agent列表。
+- 当仅提供其中一个参数时，返回满足该条件的所有Agent列表。
+- 当不提供任何参数时，返回系统中所有已注册的Agent列表。
 
-```json
-{
-  "detail": "The number of supported protocol extensions of the agent can not exceed 10."
-}
-```
+#### 2.2.2 接口功能
 
-**输入模式数量超限（422）**
+- 根据Agent名称和组织机构进行**精确匹配查询**，支持多条件组合查询（AND逻辑）。所有查询参数均为可选，不提供任何参数时返回所有已注册的Agent。
 
-```json
-{
-  "detail": "The agent default_input_modes can contain a maximum of 100 params."
-}
-```
+#### 2.2.3 接口约束
 
-**URL 超长（422）**
+- 当不提供任何参数时，返回系统中所有已注册的Agent列表（默认注册上限为40个），
+- 提供参数时，按实际情况返回，最少返回0个
 
-```json
-{
-  "detail": "The agent url can contain a maximum of 1024 characters."
-}
-```
-
-**组织名称包含危险字符（422）**
-
-```json
-{
-  "detail": "Agent provider organization contains invalid or dangerous characters."
-}
-```
-
-## 2. Agent查询
-
-### 2.1 接口名称
-
-查询符合条件的Agent
-
-### 2.2 接口描述
-
-根据Agent名称和组织机构进行**精确匹配查询**，支持多条件组合查询（AND逻辑）。所有查询参数均为可选，不提供任何参数时返回所有已注册的Agent。
-
-### 2.3 请求信息
-
-#### 2.3.1 请求方法
+#### 2.2.4 调用方法
 
 GET
 
-#### 2.3.2 请求路径
+#### 2.2.5 URI
 
 /rest/a2a-t/v1/agents/query
 
-#### 2.3.3 请求头（Headers）
+#### 2.2.6 请求参数
 
-| 参数名          | 类型     | 必填 | 说明                |
-|--------------|--------|----|-------------------|
-| Content-Type | string | 否  | 通常无需设置，响应格式为 JSON |
-
-#### 2.3.4 请求参数（Query Parameters）
-
-请求参数通过 URL 查询字符串传递，所有参数均为可选。
+- query参数列表，请求参数通过URL查询字符串传递
 
 | 参数名          | 类型     | 必填 | 默认值 | 说明                           |
 |--------------|--------|----|-----|------------------------------|
 | name         | string | 否  | -   | Agent 名称，进行精确匹配查询。支持大小写敏感匹配。 |
 | organization | string | 否  | -   | 组织机构名称，进行精确匹配查询。支持大小写敏感匹配。   |
 
-**📌 查询说明：**
+#### 2.2.7 请求示例
 
-- 当同时提供 name 和 organization 参数时，返回同时满足两个条件的 Agent。
-- 当仅提供其中一个参数时，返回满足该条件的所有 Agent。
-- 当不提供任何参数时，返回系统中所有已注册的 Agent。
-- 查询为**精确匹配**，不支持模糊搜索或通配符。
+**查询所有Agent**
 
-#### 2.3.5 请求示例
-
-**示例2.1：查询所有Agent**
 GET /rest/a2a-t/v1/agents/query HTTP/1.1
+
 Host: your-domain.com
 
-**示例2.2：按名称查询**
-GET /rest/a2a-t/v1/agents/query?name=TestAgent HTTP/1.1
+Content-Type： application/json
+
+**按名称查询**
+
+GET /rest/a2a-t/v1/agents/query?name=RAN%20Energy%20Saving%20Agent HTTP/1.1
+
 Host: your-domain.com
 
-**示例2.3：按组织机构精确查询**
-GET /rest/a2a-t/v1/agents/query?organization=HUAWEI HTTP/1.1
+Content-Type： application/json
+
+**按组织机构精确查询**
+
+GET /rest/a2a-t/v1/agents/query?organization=Huawei HTTP/1.1
+
 Host: your-domain.com
 
-**示例2.4：组合条件查询（AND）**
-GET /rest/a2a-t/v1/agents/query?name=TestAgent&organization=HUAWEI HTTP/1.1
+Content-Type： application/json
+
+**组合条件查询（AND）**
+
+GET /rest/a2a-t/v1/agents/query?name=RAN%20Energy%20Saving%20Agent&organization=Huawei HTTP/1.1
+
 Host: your-domain.com
 
-### 2.4 响应信息
+Content-Type： application/json
 
-#### 2.4.1 响应模型
+#### 2.2.8 响应参数
 
-**响应类型：** List[AgentCard]（JSON数组）
+| 参数名称 | 类型           | 参数值域 | 默认值 | 参数说明         | 参数示例 |
+|------|--------------|------|-----|--------------|------|
+| -    | list[object] | []   | -   | 符合要求的Agent列表 |      |
 
-每个 AgentCard 包含以下主要字段：
+#### 2.2.9 响应示例
 
-| 字段名                  | 类型     | 说明                        |
-|----------------------|--------|---------------------------|
-| name                 | string | Agent名称                   |
-| description          | string | Agent描述                   |
-| version              | string | 版本号                       |
-| provider             | object | 提供商信息（包含organization和url） |
-| skills               | array  | 技能列表                      |
-| capabilities         | object | 能力配置                      |
-| default_input_modes  | array  | 默认输入模式                    |
-| default_output_modes | array  | 默认输出模式                    |
-| supported_interfaces | array  | 支持的接口列表                   |
-
-#### 2.4.2 成功响应示例（200 OK）
+- 返回状态码200：查询成功
 
 ```json
 [
   {
-    "name": "TestAgent",
-    "description": "这是一个TestAgent",
+    "name": "RAN Energy Saving Agent",
+    "description": "负责RAN能效优化的自主闭环运行，包括意图探索、意图实现、效果评估与报告。",
     "version": "1.0.0",
     "provider": {
-      "organization": "AI Solutions Inc.",
-      "url": "https://test.example.com"
+      "organization": "Huawei",
+      "url": ""
     },
     "skills": [
       {
-        "name": "Test1",
-        "description": "Test1"
+        "id": "ran-es-intent-exploration",
+        "name": "RAN ES Intent Exploration",
+        "description": "评估并确定指定RAN ES意图目标的最佳可能性，考虑当前资源状况和系统能力。",
+        "tags": [
+          "wireless",
+          "energy-saving",
+          "intent"
+        ]
       },
       {
-        "name": "Test2",
-        "description": "Test2"
+        "id": "ran-es-intent-lifecycle-management",
+        "name": "RAN ES Intent Lifecycle Management",
+        "description": "管理RAN节能意图的生命周期，包括创建、修改、删除、激活、去激活意图，并执行数据采集、分析、解决方案制定与配置。",
+        "tags": [
+          "wireless",
+          "energy-saving",
+          "intent"
+        ]
+      },
+      {
+        "id": "ran-es-intent-reporting",
+        "name": "RAN ES Intent Reporting",
+        "description": "提供意图报告查询、订阅、通知功能，报告意图实现状态、达成值、推荐值及配置修改信息。",
+        "tags": [
+          "wireless",
+          "energy-saving",
+          "reporting"
+        ]
       }
     ],
     "capabilities": {
@@ -383,98 +371,230 @@ Host: your-domain.com
 ]
 ```
 
-空结果（未找到匹配Agent）
+### 2.3 语义检索
+
+#### 2.3.1 典型场景
+
+- 根据用户输入的自然语言任务描述，返回与任务最匹配的Agent列表。
+
+#### 2.3.2 接口功能
+
+- 该接口能够理解任务的语义意图，返回与任务最匹配的Agent列表。
+
+#### 2.3.3 接口约束
+
+- 无
+
+#### 2.3.4 调用方法
+
+GET
+
+#### 2.3.5 URI
+
+/rest/a2a-t/v1/agents/retrieve
+
+#### 2.3.6 请求参数
+
+- query参数列表，请求参数通过URL查询字符串传递
+
+| 参数名   | 类型      | 必填 | 默认值 | 说明                                     |
+|-------|---------|----|-----|----------------------------------------|
+| task  | string  | 是  | -   | 自然语言任务描述，用于语义检索相关Agent。例如："需要查询意图报告"等。 |
+| top_n | integer | 否  | 10  | 返回最相关的前 N 个Agent。                      |
+
+#### 2.3.7 请求示例
+
+**基本检索**
+
+GET /rest/a2a-t/v1/agents/retrieve?task=需要查询意图报告 HTTP/1.1
+
+Host: your-domain.com
+
+Content-Type： application/json
+
+**指定返回数量**
+
+GET /rest/a2a-t/v1/agents/retrieve?task=需要查询意图报告&top_n=5 HTTP/1.1
+
+Host: your-domain.com
+
+Content-Type： application/json
+
+#### 2.3.8 响应参数
+
+| 参数名称 | 类型           | 参数值域 | 默认值 | 参数说明         | 参数示例 |
+|------|--------------|------|-----|--------------|------|
+| -    | list[object] | []   | -   | 符合要求的Agent列表 |      |
+
+#### 2.3.9 响应示例
+
+- 返回状态码200：查询成功
 
 ```json
-[]
+[
+  {
+    "name": "RAN Energy Saving Agent",
+    "description": "负责RAN能效优化的自主闭环运行，包括意图探索、意图实现、效果评估与报告。",
+    "version": "1.0.0",
+    "provider": {
+      "organization": "Huawei",
+      "url": ""
+    },
+    "skills": [
+      {
+        "id": "ran-es-intent-exploration",
+        "name": "RAN ES Intent Exploration",
+        "description": "评估并确定指定RAN ES意图目标的最佳可能性，考虑当前资源状况和系统能力。",
+        "tags": [
+          "wireless",
+          "energy-saving",
+          "intent"
+        ]
+      },
+      {
+        "id": "ran-es-intent-lifecycle-management",
+        "name": "RAN ES Intent Lifecycle Management",
+        "description": "管理RAN节能意图的生命周期，包括创建、修改、删除、激活、去激活意图，并执行数据采集、分析、解决方案制定与配置。",
+        "tags": [
+          "wireless",
+          "energy-saving",
+          "intent"
+        ]
+      },
+      {
+        "id": "ran-es-intent-reporting",
+        "name": "RAN ES Intent Reporting",
+        "description": "提供意图报告查询、订阅、通知功能，报告意图实现状态、达成值、推荐值及配置修改信息。",
+        "tags": [
+          "wireless",
+          "energy-saving",
+          "reporting"
+        ]
+      }
+    ],
+    "capabilities": {
+      "streaming": true,
+      "push_notifications": false,
+      "extensions": []
+    },
+    "default_input_modes": [
+      "text",
+      "json"
+    ],
+    "default_output_modes": [
+      "text",
+      "json"
+    ],
+    "supported_interfaces": [
+      {
+        "protocol_binding": "GPRC",
+        "protocol_version": "1.0.0",
+        "url": "http://127.0.0.1:5000/"
+      },
+      {
+        "protocol_binding": "HTTP+JSON",
+        "protocol_version": "1.0.0",
+        "url": "http://127.0.0.1:5000/"
+      }
+    ]
+  }
+]
 ```
 
-### 2.5 状态码总结
+### 2.4 唯一查找
 
-| 状态码                       | 说明                     |
-|---------------------------|------------------------|
-| 200 OK                    | 请求成功，返回Agent列表（可能为空数组） |
-| 429 Too Many Requests     | 请求过于频繁，触发限流            |
-| 503 Service Unavailable   | 服务器繁忙，并发请求超过处理能力       |
-| 500 Internal Server Error | 服务器内部错误                |
+#### 2.4.1 典型场景
 
-## 3. 全量更新Agent
+- 根据用户输入的name和organization参数，精准查询name和organization对应的Agent，查不到返回null。
 
-### 3.1 接口名称
+#### 2.4.2 接口功能
 
-全量更新Agent（Full Update / Replace）
+- 根据Agent的name和organization的唯一组合，精确查询并返回单个Agent的完整详细信息
 
-### 3.2 接口描述
+#### 2.4.3 接口约束
 
-完全替换一个已存在的Agent。该接口执行**全量更新**操作，使用请求体中的完整AgentCard数据替换现有Agent的全部信息。请求体中的名称和组织机构必须与路径参数和查询参数匹配。
+- 无
 
-**🔄 更新模式：** 全量替换（Full Replace）
+#### 2.4.4 调用方法
 
-**✅ 返回类型：** boolean - 更新成功返回 true，未找到Agent返回 false
+GET
 
-**⚠️ 重要提示：** 该接口执行全量替换操作，请求体中未提供的字段将被清除。
+#### 2.4.5 URI
 
-### 3.3 请求信息
+/rest/a2a-t/v1/agents/{name}
 
-#### 3.3.1 请求方法
+#### 2.4.6 请求参数
 
-PUT
+- path参数列表
 
-#### 3.3.2 请求路径
+| 参数名  | 类型     | 必填 | 说明                                   |
+|------|--------|----|--------------------------------------|
+| name | string | 是  | Agent名称，作为路径参数传递。用于唯一标识Agent的组成部分之一。 |
 
-/rest/a2a-t/v1/update_agent/{name}
+- query参数列表，请求参数通过URL查询字符串传递
 
-#### 3.3.3 路径参数（Path Parameters）
+| 参数名          | 类型     | 必填 | 默认值 | 说明                                          |
+|--------------|--------|----|-----|---------------------------------------------|
+| organization | string | 是  | -   | Agent所属的组织机构名称，作为查询参数传递。与name共同唯一标识一个Agent。 |
 
-| 参数名  | 类型     | 必填 | 说明                                         |
-|------|--------|----|--------------------------------------------|
-| name | string | 是  | 待更新的Agent名称，作为路径参数传递。该值必须与请求体中的 name 字段匹配。 |
+**📌 标识说明：** Agent通过 name（路径参数）和 organization（查询参数）组合唯一标识。两个参数必须同时提供才能准确定位要查询的Agent。
 
-#### 3.3.4 查询参数（Query Parameters）
+#### 2.4.7 请求示例
+GET /rest/a2a-t/v1/agents/RAN%20Energy%20Saving%20Agent?organization=Huawei HTTP/1.1
 
-| 参数名          | 类型     | 必填 | 说明                                                    |
-|--------------|--------|----|-------------------------------------------------------|
-| organization | string | 是  | 待更新Agent的组织机构名称。该值必须与请求体中 provider.organization 字段匹配。 |
-
-**📌 匹配要求：**
-
-- 路径参数 name 必须与请求体中的 name 字段完全一致。
-- 查询参数 organization 必须与请求体中的 provider.organization 字段完全一致。
-- 如果匹配失败，Agent将不会被更新。
-
-#### 3.3.5 请求头（Headers）
-
-| 参数名          | 类型     | 必填 | 说明                   |
-|--------------|--------|----|----------------------|
-| Content-Type | string | 是  | 必须为 application/json |
-
-#### 3.3.6 请求参数（Body）
-
-必须提供完整的AgentCard对象，所有字段校验规则与注册接口一致。
-
-#### 3.3.7 请求示例
-
-PUT /rest/a2a-t/v1/update_agent/TestAgent?organization=HUAWEI HTTP/1.1
 Host: your-domain.com
-Content-Type: application/json
+
+Content-Type： application/json
+
+#### 2.4.8 响应参数
+
+| 参数名称 | 类型     | 参数值域 | 默认值 | 参数说明       | 参数示例 |
+|------|--------|------|-----|------------|------|
+| -    | object |      |     | 符合要求的Agent |      |
+
+#### 2.4.9 响应示例
+
+- 返回状态码200：查询成功
 
 ```json
-{
-  "name": "TestAgent",
-  "description": "这是一个TestAgent",
+  {
+  "name": "RAN Energy Saving Agent",
+  "description": "负责RAN能效优化的自主闭环运行，包括意图探索、意图实现、效果评估与报告。",
   "version": "1.0.0",
   "provider": {
-    "organization": "AI Solutions Inc.",
-    "url": "https://test.example.com"
+    "organization": "Huawei",
+    "url": ""
   },
   "skills": [
     {
-      "name": "Test1",
-      "description": "Test1"
+      "id": "ran-es-intent-exploration",
+      "name": "RAN ES Intent Exploration",
+      "description": "评估并确定指定RAN ES意图目标的最佳可能性，考虑当前资源状况和系统能力。",
+      "tags": [
+        "wireless",
+        "energy-saving",
+        "intent"
+      ]
     },
     {
-      "name": "Test2",
-      "description": "Test2"
+      "id": "ran-es-intent-lifecycle-management",
+      "name": "RAN ES Intent Lifecycle Management",
+      "description": "管理RAN节能意图的生命周期，包括创建、修改、删除、激活、去激活意图，并执行数据采集、分析、解决方案制定与配置。",
+      "tags": [
+        "wireless",
+        "energy-saving",
+        "intent"
+      ]
+    },
+    {
+      "id": "ran-es-intent-reporting",
+      "name": "RAN ES Intent Reporting",
+      "description": "提供意图报告查询、订阅、通知功能，报告意图实现状态、达成值、推荐值及配置修改信息。",
+      "tags": [
+        "wireless",
+        "energy-saving",
+        "reporting"
+      ]
     }
   ],
   "capabilities": {
@@ -505,21 +625,150 @@ Content-Type: application/json
 }
 ```
 
-### 3.4 响应信息
+### 2.5 Agent修改
 
-#### 3.4.1 成功响应
+#### 2.5.1 典型场景
 
-状态码： 200 OK
+- 已注册的Agent的信息如果有变更，则需要用户调用该接口来进行Agent信息的更新。
 
-响应类型： boolean
+#### 2.5.2 接口功能
+
+- 完全替换一个已存在的Agent。该接口使用请求体中的完整AgentCard数据替换现有Agent的全部信息。请求体中的名称和组织机构必须与路径参数和查询参数匹配。
+
+#### 2.5.3 接口约束
+
+- 无
+
+#### 2.5.4 调用方法
+
+PUT
+
+#### 2.5.5 URI
+
+/rest/a2a-t/v1/update_agent/{name}
+
+#### 2.5.6 请求参数
+
+- path参数列表
+
+| 参数名  | 类型     | 必填 | 说明                                       |
+|------|--------|----|------------------------------------------|
+| name | string | 是  | 待更新的Agent名称，作为路径参数传递。该值必须与请求体中的name字段匹配。 |
+
+- query参数列表，请求参数通过URL查询字符串传递
+
+| 参数名          | 类型     | 必填 | 说明                                                  |
+|--------------|--------|----|-----------------------------------------------------|
+| organization | string | 是  | 待更新Agent的组织机构名称。该值必须与请求体中provider.organization字段匹配。 |
+
+**📌 匹配要求：**
+
+- 路径参数name必须与请求体中的name字段完全一致。
+- 查询参数organization必须与请求体中的provider.organization字段完全一致。
+- 如果匹配失败，Agent将不会被更新。
+
+#### 2.5.7 请求示例
+
+PUT /rest/a2a-t/v1/update_agent/RAN%20Energy%20Saving%20Agent?organization=Huawei HTTP/1.1
+
+Host: your-domain.com
+
+Content-Type: application/json
+
+body体：
+
+```json
+{
+  "name": "RAN Energy Saving Agent",
+  "description": "负责RAN能效优化的自主闭环运行，包括意图探索、意图实现、效果评估与报告。",
+  "version": "1.0.0",
+  "provider": {
+    "organization": "Huawei",
+    "url": ""
+  },
+  "skills": [
+    {
+      "id": "ran-es-intent-exploration",
+      "name": "RAN ES Intent Exploration",
+      "description": "评估并确定指定RAN ES意图目标的最佳可能性，考虑当前资源状况和系统能力。",
+      "tags": [
+        "wireless",
+        "energy-saving",
+        "intent"
+      ]
+    },
+    {
+      "id": "ran-es-intent-lifecycle-management",
+      "name": "RAN ES Intent Lifecycle Management",
+      "description": "管理RAN节能意图的生命周期，包括创建、修改、删除、激活、去激活意图，并执行数据采集、分析、解决方案制定与配置。",
+      "tags": [
+        "wireless",
+        "energy-saving",
+        "intent"
+      ]
+    },
+    {
+      "id": "ran-es-intent-reporting",
+      "name": "RAN ES Intent Reporting",
+      "description": "提供意图报告查询、订阅、通知功能，报告意图实现状态、达成值、推荐值及配置修改信息。",
+      "tags": [
+        "wireless",
+        "energy-saving",
+        "reporting"
+      ]
+    }
+  ],
+  "capabilities": {
+    "streaming": true,
+    "push_notifications": false,
+    "extensions": []
+  },
+  "default_input_modes": [
+    "text",
+    "json"
+  ],
+  "default_output_modes": [
+    "text",
+    "json"
+  ],
+  "supported_interfaces": [
+    {
+      "protocol_binding": "GPRC",
+      "protocol_version": "1.0.0",
+      "url": "http://127.0.0.1:5000/"
+    },
+    {
+      "protocol_binding": "HTTP+JSON",
+      "protocol_version": "1.0.0",
+      "url": "http://127.0.0.1:5000/"
+    }
+  ]
+}
+```
+
+#### 2.5.8 响应参数
+
+| 参数名称 | 类型      | 参数值域 | 默认值 | 参数说明 | 参数示例 |
+|------|---------|------|-----|------|------|
+| -    | boolean | true | -   | xxx  | true |
+
+#### 2.5.9 响应示例
+
+- 返回状态码200：修改成功
 
 ```json
 true
 ```
 
-#### 3.4.2 错误响应示例
+- 返回状态码422：修改失败
 
-Agent未找到（404 Not Found）
+```json
+{
+  "detail": "The agent description can contain a maximum of 1000 characters."
+}
+```
+
+- 返回状态码404：Agent未找到
 
 ```json
 {
@@ -527,106 +776,67 @@ Agent未找到（404 Not Found）
 }
 ```
 
-### 3.5 技术特性
+### 2.6 注销Agent
 
-#### 3.5.1 数据校验
+#### 2.6.1 典型场景
 
-请求体中的AgentCard会经过完整的校验流程，包括字段长度、格式、数量限制等，校验规则与注册接口一致。
+- 已注册的Agent的如果想要删除，需要用户调用该接口来进行Agent信息的注销。
 
-#### 3.5.2 数量限制检查
+#### 2.6.2 接口功能
 
-更新前会检查客户端IP的Agent数量限制（_check_agent_limit），确保不超过允许的最大数量。
+- 从Agent注册中心中移除指定的Agent。该操作会彻底删除Agent的注册信息，删除后该Agent将无法被工作流调度使用。
 
-### 3.6 与注册接口的区别
+#### 2.6.3 接口约束
 
-| 特性    | 注册接口（POST）                     | 更新接口（PUT）                          |
-|-------|--------------------------------|------------------------------------|
-| 请求方法  | POST                           | PUT                                |
-| 路径    | /rest/a2a-t/v1/agents/register | /rest/a2a-t/v1/update_agent/{name} |
-| 路径参数  | 无                              | name（必填）                           |
-| 查询参数  | 无                              | organization（必填）                   |
-| 目标    | 创建新Agent                       | 替换已存在的Agent                        |
-| 重复处理  | 返回409冲突                        | 替换现有数据                             |
-| 成功状态码 | 201 Created                    | 200 OK                             |
+- 无
 
-### 3.7 状态码总结
-
-| 状态码                       | 说明                     |
-|---------------------------|------------------------|
-| 200 OK                    | 更新成功，返回 true           |
-| 400 Bad Request           | 请求参数错误，如名称/组织不匹配、校验失败等 |
-| 404 Not Found             | 指定的Agent不存在            |
-| 422 Unprocessable Content | 字段校验失败（长度、格式、数量超限等）    |
-| 429 Too Many Requests     | 请求过于频繁，触发限流            |
-| 500 Internal Server Error | 服务器内部错误                |
-| 503 Service Unavailable   | 服务器繁忙，并发请求超过处理能力       |
-
-## 4. 注销Agent
-
-### 4.1 接口名称
-
-注销Agent（Deregister Agent）
-
-### 4.2 接口描述
-
-从Agent注册中心中移除指定的Agent。该操作会彻底删除Agent的注册信息，删除后该Agent将无法被工作流调度使用。
-
-**⚠️ 危险操作警告：** 此接口执行删除操作，删除后数据无法恢复。请谨慎使用，建议在删除前进行确认。
-
-**🗑️ 操作类型：** 物理删除（Physical Delete）
-
-**✅ 返回类型：** boolean - 删除成功返回 true，未找到Agent返回 false
-
-### 4.3 请求信息
-
-#### 4.3.1 请求方法
+#### 2.6.4 调用方法
 
 DELETE
 
-#### 4.3.2 请求路径
+#### 2.6.5 URI
 
 /rest/a2a-t/v1/deregister_agent/{name}
 
-#### 4.3.3 路径参数（Path Parameters）
+#### 2.6.6 请求参数
+
+- path参数列表
 
 | 参数名  | 类型     | 必填 | 说明                                    |
 |------|--------|----|---------------------------------------|
 | name | string | 是  | 待注销的Agent名称，作为路径参数传递。用于唯一标识要删除的Agent。 |
 
-#### 4.3.4 查询参数（Query Parameters）
+- query参数列表，请求参数通过URL查询字符串传递
 
 | 参数名          | 类型     | 必填 | 默认值 | 说明                                           |
 |--------------|--------|----|-----|----------------------------------------------|
 | organization | string | 是  | -   | 待注销Agent的组织机构名称，作为查询参数传递。与name共同唯一标识一个Agent。 |
 
-**📌 标识说明：** Agent通过 name 和 organization 组合唯一标识。两个参数必须同时提供才能准确定位要删除的Agent。
+**📌 标识说明：** Agent通过name和organization组合唯一标识。两个参数必须同时提供才能准确定位要删除的Agent。
 
-#### 4.3.5 请求头（Headers）
+#### 2.6.7 请求示例
 
-| 参数名          | 类型     | 必填 | 说明     |
-|--------------|--------|----|--------|
-| Content-Type | string | 否  | 通常无需设置 |
+DELETE /rest/a2a-t/v1/deregister_agent/RAN%20Energy%20Saving%20Agent?organization=Huawei HTTP/1.1
 
-#### 4.3.6 请求示例
-
-DELETE /rest/a2a-t/v1/deregister_agent/TestAgent?organization=HUAWEI HTTP/1.1
 Host: your-domain.com
 
-### 4.4 响应信息
+Content-Type: application/json
 
-#### 4.4.1 成功响应
+#### 2.6.8 响应参数
 
-**状态码：** 200 OK
+| 参数名称 | 类型      | 参数值域 | 默认值 | 参数说明 | 参数示例 |
+|------|---------|------|-----|------|------|
+| -    | boolean | true | -   | xxx  | true |
 
-**响应类型：** boolean
+#### 2.6.9 响应示例
+
+- 返回状态码200：注销成功
 
 ```json
 true
 ```
 
-#### 4.4.2 错误响应示例
-
-Agent未找到（404 Not Found）
+- 返回状态码404：Agent未找到
 
 ```json
 {
@@ -634,15 +844,21 @@ Agent未找到（404 Not Found）
 }
 ```
 
-服务器繁忙（503 Service Unavailable）
+## 3 FAQ
 
+### 3.1 HTTP Code返回429
+
+**错误原因：** 客户端在短时间内发送了过多请求，超过了接口的访问频率限制。
 ```json
 {
-  "detail": "Server is busy"
+  "detail": "Rate limit exceeded"
 }
 ```
 
-服务器内部错误（500 Internal Server Error）
+### 3.2 HTTP Code返回500
+
+**错误原因：** 服务器内部发生未预期的异常错误，导致无法正常处理当前请求
+
 
 ```json
 {
@@ -650,321 +866,11 @@ Agent未找到（404 Not Found）
 }
 ```
 
-限流限制（429 Too Many Requests）
+### 3.3 HTTP Code返回503
 
-```json
-{
-  "detail": "Rate limit exceeded"
-}
-```
-
-### 4.5 状态码总结
-
-| 状态码                       | 说明               |
-|---------------------------|------------------|
-| 200 OK                    | 注销成功，返回 true     |
-| 404 Not Found             | 指定的Agent不存在      |
-| 429 Too Many Requests     | 请求过于频繁，触发限流      |
-| 500 Internal Server Error | 服务器内部错误          |
-| 503 Service Unavailable   | 服务器繁忙，并发请求超过处理能力 |
-
-## 5. 基于任务语义检索Agent
-
-### 5.1 接口名称
-
-基于任务语义检索Agent
-
-### 5.2 接口描述
-
-使用大语言模型（LLM）根据自然语言任务描述，语义检索与之相关的Agent。该接口能够理解任务的语义意图，返回与任务最匹配的Agent列表，按相关性排序。
-
-**💡 功能特点：**
-
-- 支持自然语言任务描述，无需精确关键词匹配
-- 基于语义理解，能够识别同义词和相关概念
-- 返回结果按与任务的相关性降序排列
-- 支持限制返回结果数量
-
-### 5.3 请求信息
-
-#### 5.3.1 请求方法
-
-GET
-
-#### 5.3.2 请求路径
-
-/rest/a2a-t/v1/agents/retrieve
-
-#### 5.3.3 请求头（Headers）
-
-| 参数名          | 类型     | 必填 | 说明                |
-|--------------|--------|----|-------------------|
-| Content-Type | string | 否  | 通常无需设置，响应格式为 JSON |
-
-#### 5.3.4 请求参数（Query Parameters）
-
-请求参数通过 URL 查询字符串传递。
-
-| 参数名   | 类型      | 必填 | 默认值 | 说明                                                     |
-|-------|---------|----|-----|--------------------------------------------------------|
-| task  | string  | 是  | -   | 自然语言任务描述，用于语义检索相关Agent。例如："需要处理数据清洗和分析"、"需要部署机器学习模型"等。 |
-| top_n | integer | 否  | 10  | 返回最相关的前 N 个Agent。                                      |
-
-**📌 参数说明：**
-
-- task 为必填参数，应提供清晰、完整的任务描述以获得最佳检索效果。
-- top_n 参数限制返回结果数量。
-
-#### 5.3.5 请求示例
-
-**示例5.1：基本检索**
-GET /rest/a2a-t/v1/agents/retrieve?task=Test HTTP/1.1
-Host: your-domain.com
-
-**示例5.2：指定返回数量**
-GET /rest/a2a-t/v1/agents/retrieve?task=Test&top_n=5 HTTP/1.1
-Host: your-domain.com
-
-### 5.4 响应信息
-
-#### 5.4.1 响应模型
-
-**响应类型：** List[AgentCard]（JSON数组）
-
-返回与任务语义相关的Agent列表。每个 AgentCard 包含以下主要字段：
-
-| 字段名                  | 类型     | 说明                          |
-|----------------------|--------|-----------------------------|
-| name                 | string | Agent名称                     |
-| description          | string | Agent描述，用于语义匹配              |
-| version              | string | 版本号                         |
-| provider             | object | 提供商信息（包含organization和url）   |
-| skills               | array  | 技能列表，每个技能包含name和description |
-| capabilities         | object | 能力配置                        |
-| default_input_modes  | array  | 默认输入模式                      |
-| default_output_modes | array  | 默认输出模式                      |
-| supported_interfaces | array  | 支持的接口列表                     |
-
-#### 5.4.2 成功响应示例（200 OK）
-
-**检索结果示例：**
-
-```json
-[
-  {
-    "name": "TestAgent",
-    "description": "这是一个TestAgent",
-    "version": "1.0.0",
-    "provider": {
-      "organization": "AI Solutions Inc.",
-      "url": "https://test.example.com"
-    },
-    "skills": [
-      {
-        "name": "Test1",
-        "description": "Test1"
-      },
-      {
-        "name": "Test2",
-        "description": "Test2"
-      }
-    ],
-    "capabilities": {
-      "streaming": true,
-      "push_notifications": false,
-      "extensions": []
-    },
-    "default_input_modes": [
-      "text",
-      "json"
-    ],
-    "default_output_modes": [
-      "text",
-      "json"
-    ],
-    "supported_interfaces": [
-      {
-        "protocol_binding": "GPRC",
-        "protocol_version": "1.0.0",
-        "url": "http://127.0.0.1:5000/"
-      },
-      {
-        "protocol_binding": "HTTP+JSON",
-        "protocol_version": "1.0.0",
-        "url": "http://127.0.0.1:5000/"
-      }
-    ]
-  }
-]
-```
-空结果示例（未找到相关Agent）：
-```json
-[]
-```
-#### 5.4.3 错误响应示例
-服务器繁忙（503 Service Unavailable）
+**错误原因：** 服务器当前处于过载状态，并发请求数量超过服务器的处理能力上限
 ```json
 {
   "detail": "Server is busy"
 }
 ```
-服务器内部错误（500 Internal Server Error）
-```json
-{
-  "detail": "Internal server error"
-}
-```
-限流限制（429 Too Many Requests）
-```json
-{
-  "detail": "Rate limit exceeded"
-}
-```
-### 5.5 状态码总结
-| 状态码                       | 说明               |
-|---------------------------|------------------|
-| 200 OK                    | 注销成功，返回 true     |
-| 429 Too Many Requests     | 请求过于频繁，触发限流      |
-| 500 Internal Server Error | 服务器内部错误          |
-| 503 Service Unavailable   | 服务器繁忙，并发请求超过处理能力 |
-
-## 6. 获取单个Agent详情
-
-### 6.1 接口名称
-
-根据名称和组织机构获取Agent详情
-
-### 6.2 接口描述
-
-根据Agent名称和组织机构的唯一组合，精确查询并返回单个Agent的完整详细信息。该接口用于获取特定Agent的配置、技能、能力等完整信息。
-
-### 6.3 请求信息
-
-#### 6.3.1 请求方法
-
-GET
-
-#### 6.3.2 请求路径
-
-/rest/a2a-t/v1/agents/{name}
-
-#### 6.3.3 路径参数（Path Parameters）
-
-| 参数名 | 类型 | 必填 | 说明 |
-|--------|------|------|------|
-| name | string | 是 | Agent名称，作为路径参数传递。用于唯一标识Agent的组成部分之一。 |
-
-#### 6.3.4 查询参数（Query Parameters）
-
-| 参数名 | 类型 | 必填 | 默认值 | 说明 |
-|--------|------|------|--------|------|
-| organization | string | 是 | - | Agent所属的组织机构名称，作为查询参数传递。与name共同唯一标识一个Agent。 |
-
-**📌 标识说明：** Agent通过 name（路径参数）和 organization（查询参数）组合唯一标识。两个参数必须同时提供才能准确定位要查询的Agent。
-
-#### 6.3.5 请求头（Headers）
-
-| 参数名 | 类型 | 必填 | 说明 |
-|--------|------|------|------|
-| Content-Type | string | 否 | 通常无需设置，响应格式为 JSON |
-
-#### 6.3.6 请求示例
-GET /rest/a2a-t/v1/agents/TestAgent?organization=HUAWEI HTTP/1.1
-Host: your-domain.com
-
-### 6.4 响应信息
-
-#### 6.4.1 响应模型
-
-**响应类型：** AgentCard（JSON对象）
-
-成功时返回完整的AgentCard对象，包含以下主要字段：
-
-| 字段名 | 类型 | 说明 |
-|--------|------|------|
-| name | string | Agent名称，最大100字符，仅字母/数字/下划线/空格 |
-| description | string | Agent描述，最大1000字符 |
-| version | string | 版本号，最大50字符 |
-| provider | object | 提供商信息，包含organization和url |
-| skills | array | 技能列表，最多100个技能 |
-| capabilities | object | 能力配置，包含streaming、push_notifications、extensions |
-| default_input_modes | array | 默认输入模式列表，如["text", "json"] |
-| default_output_modes | array | 默认输出模式列表，如["text", "json"] |
-| supported_interfaces | array | 支持的接口列表，包含url、protocol_binding和protocol_version |
-
-#### 6.4.2 成功响应示例（200 OK）
-
-**完整Agent信息响应：**
-
-```json
-{
-    "name": "TestAgent",
-    "description": "这是一个TestAgent",
-    "version": "1.0.0",
-    "provider": {
-      "organization": "AI Solutions Inc.",
-      "url": "https://test.example.com"
-    },
-    "skills": [
-      {
-        "name": "Test1",
-        "description": "Test1"
-      },
-      {
-        "name": "Test2",
-        "description": "Test2"
-      }
-    ],
-    "capabilities": {
-      "streaming": true,
-      "push_notifications": false,
-      "extensions": []
-    },
-    "default_input_modes": [
-      "text",
-      "json"
-    ],
-    "default_output_modes": [
-      "text",
-      "json"
-    ],
-    "supported_interfaces": [
-      {
-        "protocol_binding": "GPRC",
-        "protocol_version": "1.0.0",
-        "url": "http://127.0.0.1:5000/"
-      },
-      {
-        "protocol_binding": "HTTP+JSON",
-        "protocol_version": "1.0.0",
-        "url": "http://127.0.0.1:5000/"
-      }
-    ]
-}
-```
-#### 6.4.3 错误响应示例
-服务器繁忙（503 Service Unavailable）
-```json
-{
-  "detail": "Server is busy"
-}
-```
-服务器内部错误（500 Internal Server Error）
-```json
-{
-  "detail": "Internal server error"
-}
-```
-限流限制（429 Too Many Requests）
-```json
-{
-  "detail": "Rate limit exceeded"
-}
-```
-### 6.5 状态码总结
-| 状态码                       | 说明               |
-|---------------------------|------------------|
-| 200 OK                    | 注销成功，返回 true     |
-| 429 Too Many Requests     | 请求过于频繁，触发限流      |
-| 500 Internal Server Error | 服务器内部错误          |
-| 503 Service Unavailable   | 服务器繁忙，并发请求超过处理能力 |
