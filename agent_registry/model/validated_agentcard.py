@@ -175,7 +175,7 @@ def validate_agent_card(agent: AgentCard):
 
 
 def validate_status(status: str):
-    """Validate status field value (for agentmetadata.json)"""
+    """Validate status field value (for agentregistry.json)"""
     if status not in ['registered', 'published']:
         raise HTTPException(
             status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,

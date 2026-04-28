@@ -370,7 +370,7 @@ class RegistryCore:
         save_to_file(self.persistence_file, data)
 
     def _save_registry(self) -> None:
-        """Persist status map to agentmetadata.json."""
+        """Persist status map to agentregistry.json."""
         registry_data = []
         for key, status in self._status_map.items():
             registry_data.append({
@@ -398,7 +398,7 @@ class RegistryCore:
         logger.info(f"Loaded {len(self._agents)} agents from persistence.")
 
     def _load_registry(self) -> None:
-        """Load status map from agentmetadata.json."""
+        """Load status map from agentregistry.json."""
         if os.path.exists(self.metadata_file):
             registry_data = load_from_file(self.metadata_file)
             for item in registry_data:
