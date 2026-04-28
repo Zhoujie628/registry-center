@@ -1,6 +1,8 @@
 # 注册中心用户手册
 
 ## 1 注册中心功能简介
+![photo](images/photo.jpeg)
+
 注册中心是一个专注于Agent统一管理的服务，支持用户将来自不同厂商的Agent进行集中注册与管理，实现多源Agent的可控接入与维护。主要功能包括：
 
 - **Agent注册**：支持将不同厂商的Agent注册到中心，统一纳管。
@@ -39,92 +41,81 @@ POST
 
 #### 2.1.6 请求参数
 
-- body参数列表 详细请参见表：provider对象的参数列表
+- body参数列表
 
-AgentCard结构说明：
+| 参数名称             | 必选 | 类型              | 参数值域                                                              | 默认值 | 参数说明         | 参数示例                                                                                                                                                                                 |
+| -------------------- |----|-----------------|-------------------------------------------------------------------|-----|--------------|--------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------|
+| name                 | 是  | string          | 1~100个字符。满足正则表达式`^[a-zA-Z0-9_]+(?:\s+[a-zA-Z0-9_]+)*$`            | -   | AgentCard名称  | `"RAN Energy Saving Agent"`                                                                                                                                                         |
+| description          | 是  | string          | 1~1000个字符。                                                        | -   | AgentCard描述  | `"负责RAN能效优化的自主闭环运行，包括意图探索、意图实现、效果评估与报告。"`                                                                                                                                              |
+| version              | 是  | string          | 1~50个字符。                                                          | -   | AgentCard版本  | `"0.0"`                                                                                                                                                                              |
+| provider             | 是  | reference       | 详细请参见表：AgentProvider对象的参数列表                                       | -   | 提供商信息        | `{"organization": "Huawei","url": ""}`                                                                                                                                                 |
+| skills               | 否  | array_reference | 最大数量：100 个技能；每个技能的 JSON 序列化后最大长度：4096 字符；详细请参见表：AgentSkill对象的参数列表 | -   | 技能列表         | `[{"id": "ran-es-intent-exploration","name": "RAN ES Intent Exploration","description": "评估并确定指定RAN ES意图目标的最佳可能性，考虑当前资源状况和系统能力。", "tags": [ "wireless", "energy-saving", "intent" ] }]` |
+| capabilities         | 否  | reference       | 详细请参见表：AgentCapabilities对象的参数列表                                   | -   | AgentCard能力项 | `{"streaming": true,"push_notifications": false,"extensions": [] }`                                                                                                                    |
+| default_input_modes  | 否  | array of string | 最大数量：100 个                                                        | -   | 输入模式         | `["text","json"]`                                                                                                                                                                      |
+| default_output_modes | 否  | array of string | 最大数量：100 个                                                        | -   | 输入模式         | `["text","json"]`                                                                                                                                                                      |
+| supported_interfaces | 是  | array_reference | 1~3个列表，详细请参见表：AgentInterface对象的参数列表                               | -   | 支持的协议        | `[{"protocol_binding": "GPRC", "protocol_version": "0.0","url": "http://127.0.0.1:5000/"}]`                                                                                          |
 
-| 字段路径                    | 类型                        | 必填 | 说明                                                                               |
-|:------------------------|:--------------------------|:---|:---------------------------------------------------------------------------------|
-| `name`                  | string                    | 是  | 最大长度：100 字符；格式要求：仅允许字母、数字、下划线（_）和空格；正则表达式：`^[a-zA-Z0-9_]+(?:\s+[a-zA-Z0-9_]+)*$` |
-| `description`           | string                    | 是  | 最大长度：1000 字符                                                                     |
-| `supported_interfaces`  | list[AgentInterface]      | 是  |                                                                                  |
-| `version`               | string                    | 是  | 最大长度：50 字符                                                                       |
-| `provider`              | AgentProvider             | 是  |                                                                                  |
-| `capabilities`          | AgentCapabilities         | 是  |                                                                                  |
-| `skills`                | list[AgentSkill]          | 是  | 最大数量：100 个技能；每个技能的 JSON 序列化后最大长度：4096 字符                                         |
-| `default_input_modes`   | list[str]                 | 否  | 最大数量：100 个                                                                       |
-| `default_output_modes`  | list[str]                 | 否  | 最大数量：100 个                                                                       |
-| `documentation_url`     | string                    | 否  |                                                                                  |
-| `icon_url`              | string                    | 否  |                                                                                  |
-| `security_schemes`      | map(str, SecurityScheme)  | 否  |                                                                                  |
-| `security_requirements` | list[SecurityRequirement] | 否  | 操作所需的认证要求列表                                                                      |
-| `signatures`            | list[AgentCardSignature]  | 否  | 用于验证的加密签名                                                                        
+- AgentInterface对象的参数列表：
 
-**AgentInterface结构说明：**
+| 参数名称 | 必选 | 类型 | 参数值域                                | 默认值 | 参数说明 | 参数示例                             |
+| :--- |:---| :--- |:------------------------------------| :--- | :--- |:---------------------------------|
+| url | 是  | string | 1~1024个字符；必须为有效的 Web URL 格式         | - | 接口的基础 URL 地址，用于发送 A2A 请求 | `"http://127.0.0.1:5000/"` |
+| protocol_binding | 是  | string | 1~9个字符；"JSONRPC"、"GRPC"、"HTTP+JSON" | - | 协议绑定标识，表示该接口使用的传输协议 | `"JSONRPC"`                       |
+| protocol_version | 是  | string | 1~20个字符；格式：主版本号.次版本号                | - | A2A 协议版本号，表示该接口支持的 A2A 协议版本 | `"0.0"`                          |
 
-| 字段名                | 类型     | 必填 | 说明                                                                           |
-|:-------------------|:-------|:---|:-----------------------------------------------------------------------------|
-| `url`              | string | 是  | 接口的基础 URL 地址；最大长度：1024 字符；必须为有效的 Web URL 格式                                  |
-| `protocol_binding` | string | 是  | 协议绑定标识，表示该接口使用的传输协议（如 `"JSONRPC"`、`"GRPC"`、`HTTP+JSON`/`"REST"`）；最大长度：100 字符 |
-| `protocol_version` | string | 否  | A2A 协议版本号，表示该接口支持的 A2A 协议版本（如 `"1.0"` 或 `"1.0.0"`）；                          |
-| `tenant`           | string | 否  | 多租户场景下的租户标识符，用于在调用 Agent 时设置租户信息；                                            |
+- AgentProvider对象的参数列表：
 
-**AgentProvider结构说明：**
+| 参数名称 | 必选 | 类型 | 参数值域 | 默认值 | 参数说明 | 参数示例 |
+| :--- | :--- | :--- | :--- | :--- | :--- | :--- |
+| organization | 是 | string | 1~100个字符；不能为空； | - | Agent 提供商的组织名称，用于标识 Agent 的来源组织或开发团队 | `"Huawei"` |
+| url | 否 | string | 1~1024个字符；必须为有效的 Web URL  | - | Agent 提供商的官方网站链接，便于用户了解组织背景或获取技术支持 | `"https://www.huawei.com"` |
 
-| 字段名            | 类型     | 必填 | 说明                                                                         |
-|:---------------|:-------|:---|:---------------------------------------------------------------------------|
-| `organization` | string | 是  | Agent 提供商的组织名称；最大长度：100 字符；不能为空；禁止包含危险字符（如 `<`、`>`、`&` 等注入风险字符）            |
-| `url`          | string | 否  | Agent 提供商组织的官方网站链接；最大长度：1024 字符；必须为有效的 Web URL 格式（如 `https://example.com`） |
+- AgentCapabilities对象的参数列表：
 
-**AgentCapabilities结构说明：**
+| 参数名称 | 必选 | 类型 | 参数值域                                                                | 默认值   | 参数说明                                                                                 | 参数示例 |
+| :--- | :--- | :--- |:--------------------------------------------------------------------|:------|:-------------------------------------------------------------------------------------| :--- |
+| streaming | 否 | boolean | true 或 false                                                        | false | 是否支持流式传输。如果为 true，Agent 能够通过 Server-Sent Events (SSE) 实时返回响应内容；如果为 false，则仅支持一次性同步响应 | `true` |
+| push_notifications | 否 | boolean | true 或 false                                                        | false | 是否支持推送通知。如果为 true，Agent 能够主动向客户端发送任务状态更新和产物通知；需要配合 PushNotificationConfig 进行配置       | `true` |
+| extended_agent_card | 否 | boolean | true 或 false                                                        | false | 声明 Agent 是否支持经过认证后提供扩展版的 Agent Card                   | `true` |
+| extensions | 否 | array_reference | 最大数量：10 个扩展；每个扩展的 JSON 序列化后最大长度：512 字符；详细请参见表：AgentExtension对象的参数列表 | -     | 支持的扩展能力列表，用于声明 Agent 实现的 A2A 协议扩展特性                                                  | `[{"uri": "https://example.com/ext/v1", "description": "示例扩展"}]` |
 
-| 字段名                  | 类型                   | 必填 | 说明                                                                                            |
-|:---------------------|:---------------------|:---|:----------------------------------------------------------------------------------------------|
-| `streaming`          | boolean              | 否  | 是否支持流式传输。如果为 `true`，Agent 能够通过 Server-Sent Events (SSE) 实时返回响应内容；如果为 `false` 或未提供，则仅支持一次性同步响应 |
-| `push_notifications` | boolean              | 否  | 是否支持推送通知。如果为 `true`，Agent 能够主动向客户端发送任务状态更新和产物通知；需要配合 `PushNotificationConfig` 进行配置            |
-| `state_partial`      | boolean              | 否  | 是否支持部分状态更新。如果为 `true`，Agent 能够在任务执行过程中返回中间状态，而不仅仅是最终结果 (final)；适用于长耗时任务的进度展示                  |
-| `interruptible`      | boolean              | 否  | 是否支持任务中断。如果为 `true`，客户端可以发送取消请求来终止正在执行的任务；如果为 `false`，任务一旦启动将无法被取消                            |
-| `extensions`         | list[AgentExtension] | 否  | 支持的扩展能力列表。用于声明 Agent 实现的 A2A 协议扩展特性；最大数量：10 个扩展；每个扩展的 JSON 序列化后最大长度：512 字符                    |
+- AgentExtension对象的参数列表：
 
-**AgentExtension结构说明：**
+| 参数名称 | 必选 | 类型 | 参数值域                                 | 默认值   | 参数说明                                                   | 参数示例 |
+| :--- | :--- | :--- |:-------------------------------------|:------|:-------------------------------------------------------| :--- |
+| uri | 是 | string | 1~1024个字符；必须为有效的 Web URL 格式（建议包含版本号） | -     | 扩展的唯一标识符，必须是版本化的 URI 格式，用于全局唯一标识该扩展                    | `"https://example.com/ext/my-extension/v1"` |
+| description | 否 | string | 1~1000个字符                            | -     | 扩展功能的人类可读说明，描述 Agent 如何使用此扩展                           | `"支持流式传输扩展"` |
+| required | 否 | boolean | true 或 false                         | false | 表示客户端是否必须支持此扩展。如果为 true，客户端必须理解并激活该扩展，否则 Agent 将拒绝处理请求 | `true` |
+| params | 否 | object | JSON 序列化后最大长度：512 字符                 | -     | 扩展的特定配置参数或发现参数，用于传递扩展初始化所需的额外信息                        | `{"roles": ["merchant", "payment-processor"]}` |
 
-| 字段名           | 类型      | 必填    | 说明                                                                                     |
-|:--------------|:--------|:------|:---------------------------------------------------------------------------------------|
-| `uri`         | string  | **是** | 扩展的唯一标识符，必须是版本化的 URI 格式（如 `https://example.com/ext/my-extension/v1`），用于全局唯一标识该扩展；      |
-| `description` | string  | 否     | 扩展功能的人类可读说明，描述 Agent 如何使用此扩展；**最大长度：1000 字符** [citation:2][citation:10]                |
-| `required`    | boolean | 否     | 表示客户端是否必须支持此扩展。如果为 `true`，客户端**必须**理解并激活该扩展，否则 Agent 将拒绝处理请求；如果为 `false` 或未提供，该扩展为可选能力 |
-| `params`      | object  | 否     | 扩展的特定配置参数或发现参数，用于传递扩展初始化所需的额外信息；具体结构由扩展 URI 定义的规范决定；                                   |
+- AgentSkill对象的参数列表：
 
-**AgentSkill结构说明：**
-
-| 字段名            | 类型           | 必填 | 说明                                                         |
-|:---------------|:-------------|:---|:-----------------------------------------------------------|
-| `id`           | string       | 是  | 技能的唯⼀标识符，⽤于在 AgentCard 中区分不同技能                             |
-| `name`         | string       | 是  | 技能的⼈类可读名称，展示给最终用户的技能标题                                     |
-| `description`  | string       | 是  | 技能的详细功能说明，帮助客户理解该技能的具体作用和适用场景                              |
-| `tags`         | list[string] | 是  | ⽤于分类和发现的关键词标签，便于客户端按类别检索和匹配技能                              |
-| `examples`     | list[string] | 否  | 示例提示或⽤例说明，帮助用户或客户端理解如何使用该技能                                |
-| `input_modes`  | list[string] | 否  | ⽀持的输⼊媒体类型列表（MIME 类型），如 `"text/plain"`、`"application/json"` |
-| `output_modes` | list[string] | 否  | ⽀持的输出媒体类型列表（MIME 类型），如 `"text/plain"`、`"application/json"` |
+| 参数名称 | 必选 | 类型 | 参数值域 | 默认值 | 参数说明 | 参数示例 |
+| :--- | :--- | :--- | :--- | :--- | :--- | :--- |
+| id | 是 | string | 1~100个字符；仅允许字母、数字、下划线和中划线 | - | 技能的唯一标识符，用于在 AgentCard 中区分不同技能 | `"ran-es-intent-lifecycle-management"` |
+| name | 是 | string | 1~100个字符 | - | 技能的人类可读名称，展示给最终用户的技能标题 | `"RAN ES Intent Lifecycle Management"` |
+| description | 是 | string | 1~1000个字符 | - | 技能的详细功能说明，帮助客户理解该技能的具体作用和适用场景 | `"管理RAN节能意图的生命周期，包括创建、修改、删除、激活、去激活意图，并执行数据采集、分析、解决方案制定与配置。"` |
+| tags | 否 | array of string | 最大数量：50 个；每个标签最大长度：50 个字符 | - | 用于分类和发现的关键词标签，便于客户端按类别检索和匹配技能 | `["wireless","energy-saving","intent" ]` |
+| input_modes | 否 | array of string | 每个元素为 MIME 类型格式；每个元素最大长度：50 个字符；最大数量：20 个 | - | 支持的输入媒体类型列表（MIME 类型） | `["text/plain", "application/json"]` |
+| output_modes | 否 | array of string | 每个元素为 MIME 类型格式；每个元素最大长度：50 个字符；最大数量：20 个 | - | 支持的输出媒体类型列表（MIME 类型） | `["text/plain", "application/json"]` |
 
 #### 2.1.7 请求示例
 
-POST /rest/a2a-t/v1/agents/register HTTP/1.1
+```json
+POST /rest/a2a-t/v1/agents/register HTTP/1
 
 Host： your-domain.com
 
 Content-Type： application/json
 
 body体：
-
-```json
 {
   "name": "RAN Energy Saving Agent",
   "description": "负责RAN能效优化的自主闭环运行，包括意图探索、意图实现、效果评估与报告。",
-  "version": "1.0.0",
+  "version": "0.0",
   "provider": {
     "organization": "Huawei",
-    "url": ""
+    "url": "https://www.huawei.com"
   },
   "skills": [
     {
@@ -174,12 +165,12 @@ body体：
   "supported_interfaces": [
     {
       "protocol_binding": "GPRC",
-      "protocol_version": "1.0.0",
+      "protocol_version": "0.0",
       "url": "http://127.0.0.1:5000/"
     },
     {
       "protocol_binding": "HTTP+JSON",
-      "protocol_version": "1.0.0",
+      "protocol_version": "0.0",
       "url": "http://127.0.0.1:5000/"
     }
   ]
@@ -190,7 +181,7 @@ body体：
 
 | 参数名称 | 类型      | 参数值域 | 默认值 | 参数说明 | 参数示例 |
 |------|---------|------|-----|------|------|
-| -    | boolean | true | -   | xxx  | true |
+| -    | boolean | true | -   | 注册成功 | true |
 
 #### 2.1.9 响应示例
 
@@ -202,6 +193,7 @@ true
 
 - 返回状态码422：创建失败
 
+AgentCard参数校验失败
 ```json
 {
   "detail": "The agent description can contain a maximum of 1000 characters."
@@ -210,34 +202,35 @@ true
 
 - 返回状态码409：创建失败
 
+注册数量超出上限
 ```json
 {
   "detail": "Agent registration limit exceeded."
 }
 ```
-
+重复注册
 ```json
 {
-  "detail": "Registration skipped: duplicate agent ({agent.name}, {agent.provider.organization})"
+  "detail": "Registration skipped: duplicate agent (RAN Energy Saving Agent, Huawei)"
 }
 ```
 
 ### 2.2 批量查询
 
 #### 2.2.1 典型场景
-
-- 当同时提供name和organization参数时，返回同时满足两个条件的Agent列表。
-- 当仅提供其中一个参数时，返回满足该条件的所有Agent列表。
-- 当不提供任何参数时，返回系统中所有已注册的Agent列表。
+当用户需要查询Agent信息时，可以通过该接口来返回Agent列表。
 
 #### 2.2.2 接口功能
 
-- 根据Agent名称和组织机构进行**精确匹配查询**，支持多条件组合查询（AND逻辑）。所有查询参数均为可选，不提供任何参数时返回所有已注册的Agent。
+- 根据Agent名称和组织机构进行**精确匹配查询**，
+- 支持多条件组合查询（AND逻辑）
+- 所有查询参数均为可选，不提供任何参数时返回所有已注册的Agent列表。
 
 #### 2.2.3 接口约束
 
 - 当不提供任何参数时，返回系统中所有已注册的Agent列表（默认注册上限为40个），
 - 提供参数时，按实际情况返回，最少返回0个
+- 单实例上该接口最大并发数为100
 
 #### 2.2.4 调用方法
 
@@ -258,43 +251,47 @@ GET
 
 #### 2.2.7 请求示例
 
-**查询所有Agent**
-
-GET /rest/a2a-t/v1/agents/query HTTP/1.1
-
-Host: your-domain.com
-
-Content-Type： application/json
-
-**按名称查询**
-
-GET /rest/a2a-t/v1/agents/query?name=RAN%20Energy%20Saving%20Agent HTTP/1.1
+- 查询所有Agent
+```json
+GET /rest/a2a-t/v1/agents/query HTTP/1
 
 Host: your-domain.com
 
 Content-Type： application/json
+```
 
-**按组织机构精确查询**
-
-GET /rest/a2a-t/v1/agents/query?organization=Huawei HTTP/1.1
-
-Host: your-domain.com
-
-Content-Type： application/json
-
-**组合条件查询（AND）**
-
-GET /rest/a2a-t/v1/agents/query?name=RAN%20Energy%20Saving%20Agent&organization=Huawei HTTP/1.1
+- 按名称查询
+```json
+GET /rest/a2a-t/v1/agents/query?name=RAN%20Energy%20Saving%20Agent HTTP/1
 
 Host: your-domain.com
 
 Content-Type： application/json
+```
+
+- 按组织机构精确查询
+```json
+GET /rest/a2a-t/v1/agents/query?organization=Huawei HTTP/1
+
+Host: your-domain.com
+
+Content-Type： application/json
+```
+
+- 组合条件查询（AND）
+```json
+GET /rest/a2a-t/v1/agents/query?name=RAN%20Energy%20Saving%20Agent&organization=Huawei HTTP/1
+
+Host: your-domain.com
+
+Content-Type： application/json
+```
 
 #### 2.2.8 响应参数
 
-| 参数名称 | 类型           | 参数值域 | 默认值 | 参数说明         | 参数示例 |
-|------|--------------|------|-----|--------------|------|
-| -    | list[object] | []   | -   | 符合要求的Agent列表 |      |
+| 参数名称 | 类型              | 参数值域 | 默认值 | 参数说明         | 参数示例              |
+|------|-----------------|------|-----|--------------|-------------------|
+| -    | array of object | []   | -   | 符合要求的Agent列表 | 参考响应示例中的状态码200的响应 |
 
 #### 2.2.9 响应示例
 
@@ -305,7 +302,7 @@ Content-Type： application/json
   {
     "name": "RAN Energy Saving Agent",
     "description": "负责RAN能效优化的自主闭环运行，包括意图探索、意图实现、效果评估与报告。",
-    "version": "1.0.0",
+    "version": "0.0",
     "provider": {
       "organization": "Huawei",
       "url": ""
@@ -358,12 +355,12 @@ Content-Type： application/json
     "supported_interfaces": [
       {
         "protocol_binding": "GPRC",
-        "protocol_version": "1.0.0",
+        "protocol_version": "0.0",
         "url": "http://127.0.0.1:5000/"
       },
       {
         "protocol_binding": "HTTP+JSON",
-        "protocol_version": "1.0.0",
+        "protocol_version": "0.0",
         "url": "http://127.0.0.1:5000/"
       }
     ]
@@ -382,8 +379,7 @@ Content-Type： application/json
 - 该接口能够理解任务的语义意图，返回与任务最匹配的Agent列表。
 
 #### 2.3.3 接口约束
-
-- 无
+- 单实例上该接口最大并发数为100
 
 #### 2.3.4 调用方法
 
@@ -403,28 +399,28 @@ GET
 | top_n | integer | 否  | 10  | 返回最相关的前 N 个Agent。                      |
 
 #### 2.3.7 请求示例
-
-**基本检索**
-
-GET /rest/a2a-t/v1/agents/retrieve?task=需要查询意图报告 HTTP/1.1
-
-Host: your-domain.com
-
-Content-Type： application/json
-
-**指定返回数量**
-
-GET /rest/a2a-t/v1/agents/retrieve?task=需要查询意图报告&top_n=5 HTTP/1.1
+- 基本检索
+```json
+GET /rest/a2a-t/v1/agents/retrieve?task=需要查询意图报告 HTTP/1
 
 Host: your-domain.com
 
 Content-Type： application/json
+```
+- 指定返回数量
+```json
+GET /rest/a2a-t/v1/agents/retrieve?task=需要查询意图报告&top_n=5 HTTP/1
+
+Host: your-domain.com
+
+Content-Type： application/json
+```
 
 #### 2.3.8 响应参数
 
-| 参数名称 | 类型           | 参数值域 | 默认值 | 参数说明         | 参数示例 |
-|------|--------------|------|-----|--------------|------|
-| -    | list[object] | []   | -   | 符合要求的Agent列表 |      |
+| 参数名称 | 类型              | 参数值域 | 默认值 | 参数说明         | 参数示例 |
+|------|-----------------|------|-----|--------------|------|
+| -    | array of object | []   | -   | 符合要求的Agent列表 |    参考响应示例中的状态码200的响应  |
 
 #### 2.3.9 响应示例
 
@@ -435,7 +431,7 @@ Content-Type： application/json
   {
     "name": "RAN Energy Saving Agent",
     "description": "负责RAN能效优化的自主闭环运行，包括意图探索、意图实现、效果评估与报告。",
-    "version": "1.0.0",
+    "version": "0.0",
     "provider": {
       "organization": "Huawei",
       "url": ""
@@ -488,12 +484,12 @@ Content-Type： application/json
     "supported_interfaces": [
       {
         "protocol_binding": "GPRC",
-        "protocol_version": "1.0.0",
+        "protocol_version": "0.0",
         "url": "http://127.0.0.1:5000/"
       },
       {
         "protocol_binding": "HTTP+JSON",
-        "protocol_version": "1.0.0",
+        "protocol_version": "0.0",
         "url": "http://127.0.0.1:5000/"
       }
     ]
@@ -512,8 +508,7 @@ Content-Type： application/json
 - 根据Agent的name和organization的唯一组合，精确查询并返回单个Agent的完整详细信息
 
 #### 2.4.3 接口约束
-
-- 无
+- 单实例上该接口最大并发数为100
 
 #### 2.4.4 调用方法
 
@@ -540,17 +535,19 @@ GET
 **📌 标识说明：** Agent通过 name（路径参数）和 organization（查询参数）组合唯一标识。两个参数必须同时提供才能准确定位要查询的Agent。
 
 #### 2.4.7 请求示例
-GET /rest/a2a-t/v1/agents/RAN%20Energy%20Saving%20Agent?organization=Huawei HTTP/1.1
+```json
+GET /rest/a2a-t/v1/agents/RAN%20Energy%20Saving%20Agent?organization=Huawei HTTP/1
 
 Host: your-domain.com
 
 Content-Type： application/json
+```
 
 #### 2.4.8 响应参数
 
-| 参数名称 | 类型     | 参数值域 | 默认值 | 参数说明       | 参数示例 |
-|------|--------|------|-----|------------|------|
-| -    | object |      |     | 符合要求的Agent |      |
+| 参数名称 | 类型     | 参数值域   | 默认值 | 参数说明       | 参数示例 |
+|------|--------|--------|-----|------------|------|
+| -    | object | ocject | -   | 符合要求的Agent | 参考响应示例中的状态码200的响应     |
 
 #### 2.4.9 响应示例
 
@@ -560,7 +557,7 @@ Content-Type： application/json
   {
   "name": "RAN Energy Saving Agent",
   "description": "负责RAN能效优化的自主闭环运行，包括意图探索、意图实现、效果评估与报告。",
-  "version": "1.0.0",
+  "version": "0.0",
   "provider": {
     "organization": "Huawei",
     "url": ""
@@ -613,12 +610,12 @@ Content-Type： application/json
   "supported_interfaces": [
     {
       "protocol_binding": "GPRC",
-      "protocol_version": "1.0.0",
+      "protocol_version": "0.0",
       "url": "http://127.0.0.1:5000/"
     },
     {
       "protocol_binding": "HTTP+JSON",
-      "protocol_version": "1.0.0",
+      "protocol_version": "0.0",
       "url": "http://127.0.0.1:5000/"
     }
   ]
@@ -637,7 +634,7 @@ Content-Type： application/json
 
 #### 2.5.3 接口约束
 
-- 无
+- 单实例上该接口最大并发数为100
 
 #### 2.5.4 调用方法
 
@@ -668,20 +665,18 @@ PUT
 - 如果匹配失败，Agent将不会被更新。
 
 #### 2.5.7 请求示例
-
-PUT /rest/a2a-t/v1/update_agent/RAN%20Energy%20Saving%20Agent?organization=Huawei HTTP/1.1
+```json
+PUT /rest/a2a-t/v1/update_agent/RAN%20Energy%20Saving%20Agent?organization=Huawei HTTP/1
 
 Host: your-domain.com
 
 Content-Type: application/json
 
 body体：
-
-```json
 {
   "name": "RAN Energy Saving Agent",
   "description": "负责RAN能效优化的自主闭环运行，包括意图探索、意图实现、效果评估与报告。",
-  "version": "1.0.0",
+  "version": "0.0",
   "provider": {
     "organization": "Huawei",
     "url": ""
@@ -734,12 +729,12 @@ body体：
   "supported_interfaces": [
     {
       "protocol_binding": "GPRC",
-      "protocol_version": "1.0.0",
+      "protocol_version": "0.0",
       "url": "http://127.0.0.1:5000/"
     },
     {
       "protocol_binding": "HTTP+JSON",
-      "protocol_version": "1.0.0",
+      "protocol_version": "0.0",
       "url": "http://127.0.0.1:5000/"
     }
   ]
@@ -750,7 +745,7 @@ body体：
 
 | 参数名称 | 类型      | 参数值域 | 默认值 | 参数说明 | 参数示例 |
 |------|---------|------|-----|------|------|
-| -    | boolean | true | -   | xxx  | true |
+| -    | boolean | true | -   | 修改成功 | true |
 
 #### 2.5.9 响应示例
 
@@ -761,7 +756,7 @@ true
 ```
 
 - 返回状态码422：修改失败
-
+AgentCard参数校验失败
 ```json
 {
   "detail": "The agent description can contain a maximum of 1000 characters."
@@ -780,7 +775,7 @@ true
 
 #### 2.6.1 典型场景
 
-- 已注册的Agent的如果想要删除，需要用户调用该接口来进行Agent信息的注销。
+- 已注册的Agent的如果想要注销，需要用户调用该接口来进行Agent信息的注销。
 
 #### 2.6.2 接口功能
 
@@ -788,7 +783,7 @@ true
 
 #### 2.6.3 接口约束
 
-- 无
+- 单实例上该接口最大并发数为50
 
 #### 2.6.4 调用方法
 
@@ -815,18 +810,18 @@ DELETE
 **📌 标识说明：** Agent通过name和organization组合唯一标识。两个参数必须同时提供才能准确定位要删除的Agent。
 
 #### 2.6.7 请求示例
-
-DELETE /rest/a2a-t/v1/deregister_agent/RAN%20Energy%20Saving%20Agent?organization=Huawei HTTP/1.1
+```json
+DELETE /rest/a2a-t/v1/deregister_agent/RAN%20Energy%20Saving%20Agent?organization=Huawei HTTP/1
 
 Host: your-domain.com
 
 Content-Type: application/json
-
+```
 #### 2.6.8 响应参数
 
 | 参数名称 | 类型      | 参数值域 | 默认值 | 参数说明 | 参数示例 |
 |------|---------|------|-----|------|------|
-| -    | boolean | true | -   | xxx  | true |
+| -    | boolean | true | -   | 注销成功 | true |
 
 #### 2.6.9 响应示例
 
