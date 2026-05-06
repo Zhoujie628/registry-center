@@ -273,6 +273,10 @@ class RegistryCore:
                 logger.info(f"Deregister failed: agent not found ({name},{organization})")
                 return False
             del self._agents[key]
+            self._status_map.pop(key, None)
+            self._tags_map.pop(key, None)
+            self._created_at_map.pop(key, None)
+            self._updated_at_map.pop(key, None)
             self._save()
             logger.info(f"Deregistered agent: {name}({organization})")
             return True

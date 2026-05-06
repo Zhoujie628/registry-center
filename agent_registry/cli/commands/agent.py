@@ -386,7 +386,9 @@ class UDSGetCommand(BaseCommand):
             print(f"  Agent: {agentcard.get('name')} ({agentcard.get('provider', {}).get('organization')})")
             print(f"  Status: {data.get('status', 'published')}")
             print(f"  Tags: {data.get('tag', [])}")
-            print(f"  Description: {agentcard.get('description', '')[:50]}...")
+            description = agentcard.get('description', '')
+            desc_display = description[:50] + '...' if len(description) > 50 else description
+            print(f"  Description: {desc_display}")
             return 0
         else:
             output.error(result.get("error", "Query failed"))
