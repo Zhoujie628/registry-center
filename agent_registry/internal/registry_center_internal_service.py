@@ -15,6 +15,7 @@
 
 import json
 import os
+import platform
 import socket
 import threading
 from typing import Dict, Type, Optional
@@ -24,6 +25,9 @@ from pydantic import ValidationError
 
 from agent_registry.internal.handlers import BaseUDSHandler
 from agent_registry.internal.handlers.approval_handler import ApprovalHandler
+from agent_registry.internal.handlers.get_agent_handler import GetAgentHandler
+from agent_registry.internal.handlers.list_agents_handler import ListAgentsHandler
+from agent_registry.internal.handlers.add_tags_handler import AddTagsHandler
 from agent_registry.internal.protocols.actions import Action
 from agent_registry.internal.protocols.request import InternalRequest
 from agent_registry.registry_instance import get_registry
@@ -33,6 +37,9 @@ from common.util.config_util import get_conf
 class RequestDispatcher:
     _handlers: Dict[str, Type[BaseUDSHandler]] = {
         Action.APPROVAL: ApprovalHandler,
+        Action.GET_AGENT: GetAgentHandler,
+        Action.LIST_AGENTS: ListAgentsHandler,
+        Action.ADD_TAGS: AddTagsHandler,
     }
 
     def get_handler(self, action: str) -> Optional[BaseUDSHandler]:
@@ -57,37 +64,68 @@ class RegistryCenterInternalService:
         self._running = False
 
     def start(self):
-        self._ensure_socket_dir()
-        try:
-            os.unlink(self.socket_path)
-        except FileNotFoundError:
-            pass
+        if platform.system() == 'Windows':
+            # ========== Windows 使用 TCP ==========
+            host = '127.0.0.1'
+            port = 9302  # 固定端口，确保不与其它服务冲突，仅windows本地调试使用
+            server_socket = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+            server_socket.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
+            try:
+                server_socket.bind((host, port))
+                server_socket.listen(5)
+                self._running = True
+                logger.info(f"Internal service started on TCP {host}:{port}")
 
-        server_socket = socket.socket(socket.AF_UNIX, socket.SOCK_STREAM)
-        try:
-            server_socket.bind(self.socket_path)
-            os.chmod(self.socket_path, 0o660)
-            server_socket.listen(5)
-            self._running = True
-            logger.info(f"Internal service started on UDS socket: {self.socket_path}")
+                while self._running:
+                    try:
+                        server_socket.settimeout(1.0)
+                        conn, addr = server_socket.accept()
+                        logger.debug(f"Accepted connection from {addr}")
+                        thread = threading.Thread(target=self._handle_request, args=(conn,))
+                        thread.daemon = True
+                        thread.start()
+                    except socket.timeout:
+                        continue
+                    except Exception as e:
+                        if self._running:
+                            logger.error(f"Error accepting connection: {e}")
+            except Exception as e:
+                logger.error(f"Failed to start TCP service: {e}")
+            finally:
+                server_socket.close()
+        else:
+            # ========== Linux / Unix 使用 UDS ==========
+            self._ensure_socket_dir()
+            try:
+                os.unlink(self.socket_path)
+            except FileNotFoundError:
+                pass
 
-            while self._running:
-                try:
-                    server_socket.settimeout(1.0)
-                    conn, _ = server_socket.accept()
-                    thread = threading.Thread(target=self._handle_request, args=(conn,))
-                    thread.daemon = True
-                    thread.start()
-                except socket.timeout:
-                    continue
-                except Exception as e:
-                    if self._running:
-                        logger.error(f"Error accepting connection: {e}")
-        except Exception as e:
-            logger.error(f"Failed to start UDS service: {e}")
-        finally:
-            server_socket.close()
-            self._cleanup_socket()
+            server_socket = socket.socket(socket.AF_UNIX, socket.SOCK_STREAM)
+            try:
+                server_socket.bind(self.socket_path)
+                os.chmod(self.socket_path, 0o660)
+                server_socket.listen(5)
+                self._running = True
+                logger.info(f"Internal service started on UDS socket: {self.socket_path}")
+
+                while self._running:
+                    try:
+                        server_socket.settimeout(1.0)
+                        conn, _ = server_socket.accept()
+                        thread = threading.Thread(target=self._handle_request, args=(conn,))
+                        thread.daemon = True
+                        thread.start()
+                    except socket.timeout:
+                        continue
+                    except Exception as e:
+                        if self._running:
+                            logger.error(f"Error accepting connection: {e}")
+            except Exception as e:
+                logger.error(f"Failed to start UDS service: {e}")
+            finally:
+                server_socket.close()
+                self._cleanup_socket()  # 仅在 UDS 模式清理 socket 文件
 
     def stop(self):
         self._running = False
