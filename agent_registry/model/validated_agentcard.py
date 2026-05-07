@@ -21,6 +21,8 @@ from google.protobuf.internal.containers import RepeatedScalarFieldContainer, Re
 from google.protobuf.json_format import MessageToJson
 from pydantic import HttpUrl
 
+from .blacklist_config import PROMPT_INJECTION_BLACKLIST, DANGEROUS_SKILL_BLACKLIST
+
 _NAME_PATTERN = re.compile(r'^[a-zA-Z0-9_]+(?:\s+[a-zA-Z0-9_]+)*$')
 
 NAME_MAX_LENGTH = 100
@@ -35,6 +37,15 @@ MAX_NUMBER_OF_AGENT_EXTENSION = 10
 AGENT_EXTENSION_MAX_LENGTH = 512
 
 _DANGEROUS_CHARS = re.compile(r'[\x00-\x1F\x7F\x80-\x9F\u2028\u2029\u202D\u202E\u200B\u200C\u200D\uFEFF\u2066-\u2069]')
+
+
+def check_blacklist(text: str, blacklist: list, field_name: str):
+    text_lower = text.lower()
+    for pattern in blacklist:
+        if pattern.lower() in text_lower:
+            raise HTTPException(
+                status_code=status.HTTP_422_UNPROCESSABLE_CONTENT,
+                detail=f'{field_name} contains prohibited content: {pattern}')
 
 
 def validate_name(v: str):
@@ -53,6 +64,8 @@ def validate_description(description: str):
         raise HTTPException(
             status_code=status.HTTP_422_UNPROCESSABLE_CONTENT,
             detail=f'The agent description can contain a maximum of {DESCRIPTION_MAX_LENGTH} characters.')
+    check_blacklist(description, PROMPT_INJECTION_BLACKLIST, "description")
+    check_blacklist(description, DANGEROUS_SKILL_BLACKLIST, "description")
 
 
 def validate_supported_interfaces(supported_interfaces: RepeatedCompositeFieldContainer[AgentInterface]):
@@ -96,6 +109,13 @@ def validate_skills(skills: RepeatedCompositeFieldContainer[AgentSkill]):
             status_code=status.HTTP_422_UNPROCESSABLE_CONTENT,
             detail=f'The agent can contain a maximum of {MAX_NUMBER_OF_SKILLS} skills')
     for skill in skills:
+        check_blacklist(skill.name, PROMPT_INJECTION_BLACKLIST, "skill name")
+        check_blacklist(skill.name, DANGEROUS_SKILL_BLACKLIST, "skill name")
+        check_blacklist(skill.description, PROMPT_INJECTION_BLACKLIST, "skill description")
+        check_blacklist(skill.description, DANGEROUS_SKILL_BLACKLIST, "skill description")
+        for tag in skill.tags:
+            check_blacklist(tag, PROMPT_INJECTION_BLACKLIST, "skill tag")
+            check_blacklist(tag, DANGEROUS_SKILL_BLACKLIST, "skill tag")
         skill_json = MessageToJson(skill)
         if len(skill_json) > SKILL_MAX_LENGTH:
             raise HTTPException(
