@@ -18,94 +18,31 @@ CLI UDS Client
 
 Unified socket client for CLI commands to communicate with internal UDS service.
 All CLI commands that need internal service access should use this client.
-
-Windows: Uses TCP (127.0.0.1:9302) for local debugging
-Linux: Uses UDS (run/registry-center/internal.sock)
 """
 
 import json
-import platform
 import socket
-from typing import Dict, Any, Optional, List
+from typing import Dict, Any, Optional
 
 from loguru import logger
 
 
 class UDSClient:
     """
-    Socket Client for CLI
+    UDS Socket Client for CLI
 
-    Communicates with internal service:
-    - Linux: Unix Domain Socket
-    - Windows: TCP socket (for local debugging)
-
+    Communicates with internal service via Unix Domain Socket.
     All CLI commands should use this client for internal operations.
     """
 
     SOCKET_PATH = "run/registry-center/internal.sock"
-    TCP_HOST = "127.0.0.1"
-    TCP_PORT = 9302
 
-    def __init__(self, socket_path: str = None, tcp_host: str = None, tcp_port: int = None):
+    def __init__(self, socket_path: str = None):
         self.socket_path = socket_path or self.SOCKET_PATH
-        self.tcp_host = tcp_host or self.TCP_HOST
-        self.tcp_port = tcp_port or self.TCP_PORT
-        self._use_tcp = platform.system() == 'Windows'
-
-    def _connect(self) -> socket.socket:
-        """Create and connect socket"""
-        if self._use_tcp:
-            client_socket = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
-            client_socket.connect((self.tcp_host, self.tcp_port))
-        else:
-            client_socket = socket.socket(socket.AF_UNIX, socket.SOCK_STREAM)
-            client_socket.connect(self.socket_path)
-        return client_socket
-
-    def _handle_connect_error(self, e: Exception) -> Dict[str, Any]:
-        """Handle connection errors"""
-        if self._use_tcp:
-            if isinstance(e, ConnectionRefusedError):
-                return {
-                    "success": False,
-                    "error": "Connection refused",
-                    "message": f"Internal service is not running on {self.tcp_host}:{self.tcp_port}"
-                }
-            else:
-                return {
-                    "success": False,
-                    "error": "Connection failed",
-                    "message": str(e)
-                }
-        else:
-            if isinstance(e, FileNotFoundError):
-                return {
-                    "success": False,
-                    "error": "Socket not found",
-                    "message": f"Internal service is not running (socket: {self.socket_path})"
-                }
-            elif isinstance(e, PermissionError):
-                return {
-                    "success": False,
-                    "error": "Permission denied",
-                    "message": "You don't have permission to access registry center"
-                }
-            elif isinstance(e, ConnectionRefusedError):
-                return {
-                    "success": False,
-                    "error": "Connection refused",
-                    "message": "Internal service is not accepting connections"
-                }
-            else:
-                return {
-                    "success": False,
-                    "error": "Connection failed",
-                    "message": str(e)
-                }
 
     def send_request(self, action: str, params: Dict[str, Any]) -> Dict[str, Any]:
         """
-        Send request to internal service
+        Send request to internal UDS service
 
         Args:
             action: Action type (e.g., "approval")
@@ -119,10 +56,27 @@ class UDSClient:
             "params": params
         }
 
+        client_socket = socket.socket(socket.AF_UNIX, socket.SOCK_STREAM)
         try:
-            client_socket = self._connect()
-        except Exception as e:
-            return self._handle_connect_error(e)
+            client_socket.connect(self.socket_path)
+        except FileNotFoundError:
+            return {
+                "success": False,
+                "error": "Socket not found",
+                "message": f"Internal service is not running (socket: {self.socket_path})"
+            }
+        except PermissionError:
+            return {
+                "success": False,
+                "error": "Permission denied",
+                "message": "You don't have permission to access registry center"
+            }
+        except ConnectionRefusedError:
+            return {
+                "success": False,
+                "error": "Connection refused",
+                "message": "Internal service is not accepting connections"
+            }
 
         try:
             client_socket.send(json.dumps(request).encode('utf-8'))
@@ -153,25 +107,6 @@ class UDSClient:
         return self.send_request("approval", {
             "agent_name": agent_name,
             "organization": organization
-        })
-
-    def get_agent(self, agent_name: str, organization: str) -> Dict[str, Any]:
-        """Get single agent metadata (agent_name, organization, status, tag)"""
-        return self.send_request("get_agent", {
-            "agent_name": agent_name,
-            "organization": organization
-        })
-
-    def list_agents(self) -> Dict[str, Any]:
-        """Get all agents metadata"""
-        return self.send_request("list_agents", {})
-
-    def add_tags(self, agent_name: str, organization: str, tags: List[str]) -> Dict[str, Any]:
-        """Add tags to agent"""
-        return self.send_request("add_tags", {
-            "agent_name": agent_name,
-            "organization": organization,
-            "tags": tags
         })
 
 
