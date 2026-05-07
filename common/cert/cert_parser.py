@@ -19,6 +19,7 @@ from cryptography.hazmat.primitives.asymmetric.types import PrivateKeyTypes
 
 from common.cert.cert_exception import CertParseException
 from common.cert.x509_obj import X509Obj, CertObj
+from common.cert.cert_cn_parser import extract_cn_from_subject
 
 
 SM2_SIGN = '1.2.156.10197.1.501'
@@ -85,15 +86,17 @@ def _extract_certificate_info(cert: x509.Certificate) -> CertObj:
     # SM2 national cipher mode not supported
     if SM2_SIGN in cert.signature_algorithm_oid.dotted_string:
         raise CertParseException(f"Unsupported sm2 public key type: {SM2_SIGN}")
+    subject_str = cert.subject.rfc4514_string()
     info = {
-        'subject': cert.subject.rfc4514_string(),
+        'subject': subject_str,
         'issuer': cert.issuer.rfc4514_string(),
         'serial_number': hex(cert.serial_number),
         'valid_from': cert.not_valid_before_utc.isoformat(),
         'valid_to': cert.not_valid_after_utc.isoformat(),
         'version': cert.version,
         'public_key': cert.public_key(),
-        'org_cert': cert
+        'org_cert': cert,
+        'cn': extract_cn_from_subject(subject_str)
     }
     obj = CertObj.from_dict(info)
     return obj

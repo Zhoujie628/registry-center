@@ -15,8 +15,29 @@
 
 from abc import ABC, abstractmethod
 from typing import List, Optional, Dict, Any
+from dataclasses import dataclass, field
 
 from a2a.types import AgentCard
+
+
+@dataclass
+class AgentRecord:
+    agent_card: AgentCard
+    owner: Optional[str] = None
+    status: str = 'published'
+    created_at: str = ''
+    updated_at: str = ''
+    tags: List[str] = field(default_factory=list)
+
+    def to_dict(self) -> Dict[str, Any]:
+        return {
+            "agent_card": self.agent_card,
+            "owner": self.owner,
+            "status": self.status,
+            "created_at": self.created_at,
+            "updated_at": self.updated_at,
+            "tags": self.tags
+        }
 
 
 class StorageBackend(ABC):
@@ -26,11 +47,11 @@ class StorageBackend(ABC):
         pass
 
     @abstractmethod
-    def create(self, agent: AgentCard) -> bool:
+    def create(self, agent: AgentCard, owner: Optional[str] = None, status: Optional[str] = None) -> bool:
         pass
 
     @abstractmethod
-    def find_by_key(self, name: str, organization: str) -> Optional[AgentCard]:
+    def find_by_key(self, name: str, organization: str, owner: Optional[str] = None) -> Optional[AgentRecord]:
         pass
 
     @abstractmethod
@@ -46,11 +67,15 @@ class StorageBackend(ABC):
         pass
 
     @abstractmethod
-    def update(self, name: str, organization: str, agent_data: Dict[str, Any]) -> bool:
+    def find_by_owner(self, owner: str) -> List[AgentRecord]:
         pass
 
     @abstractmethod
-    def delete(self, name: str, organization: str) -> bool:
+    def update(self, name: str, organization: str, agent_data: Dict[str, Any], owner: Optional[str] = None) -> bool:
+        pass
+
+    @abstractmethod
+    def delete(self, name: str, organization: str, owner: Optional[str] = None) -> bool:
         pass
 
     @abstractmethod

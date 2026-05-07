@@ -42,7 +42,7 @@ from agent_registry.config import (
     MAX_URL_LENGTH, CONN_TIMEOUT, CONN_MAX, FLOW_CTL_PARALLEL_REGISTER, FLOW_CTL_PARALLEL_QUERY, FLOW_CTL_REGISTER,
     FLOW_CTL_QUERY, AGENT_NUM_MAX, FLOW_CTL_PARALLEL_UPDATE, FLOW_CTL_PARALLEL_GET, FLOW_CTL_PARALLEL_RETRIEVE,
     FLOW_CTL_PARALLEL_DEREGISTER, FLOW_CTL_UPDATE, FLOW_CTL_GET, FLOW_CTL_RETRIEVE, FLOW_CTL_DEREGISTER,
-    FLOW_CTL_JWK, FLOW_CTL_PARALLEL_JWK,
+    FLOW_CTL_JWK, FLOW_CTL_PARALLEL_JWK, OWNER_ISOLATION_ENABLED, OWNER_VALIDATION_MODE,
 )
 from agent_registry.core import RegistryCore
 from agent_registry.model.validated_agentcard import validate_agent_card
@@ -53,6 +53,7 @@ from common.custom.custom_handle import HandlerRegistry
 from common.custom.interface_type import InterfaceType
 from common.log.audit_logger import OperationResult, LogLevel, OperatorObject, OperationName
 from common.util.config_util import get_conf
+from common.cert.cert_cn_parser import validate_cn
 
 # ---------- Rate Limiter Setup (In-Memory) ----------
 # Use in-memory storage for single-node deployments. Counts reset on restart.
@@ -227,6 +228,88 @@ async def security_middleware(request: Request, call_next):
 
 
 # ---------- Routes ----------
+def _get_owner_from_request(request: Request) -> Optional[str]:
+    """
+    Extract owner (CN) from request header X-SSL-Client-DN.
+    Parses CN from the DN string format: CN=username,O=Org,C=US
+
+    Returns:
+        CN value (None if not present or if owner isolation is disabled)
+    """
+    if not OWNER_ISOLATION_ENABLED:
+        return None
+
+    dn = request.headers.get('X-SSL-Client-DN')
+    if dn:
+        # Parse CN from DN string (format: CN=username,O=Org,C=US)
+        dn = dn.strip()
+        cn_value = None
+        for part in dn.split(','):
+            part = part.strip()
+            if part.upper().startswith('CN='):
+                cn_value = part[3:].strip()
+                break
+
+        if cn_value:
+            if OWNER_VALIDATION_MODE == 'strict':
+                if not validate_cn(cn_value):
+                    logger.warning(f"Invalid CN format: {cn_value}")
+                    raise HTTPException(
+                        status_code=status.HTTP_400_BAD_REQUEST,
+                        detail=f"Invalid CN format: {cn_value}"
+                    )
+            return cn_value
+    return None
+
+
+async def _verify_owner_permission(
+    request: Request,
+    name: str,
+    organization: str,
+    registry: RegistryCore
+) -> Optional[str]:
+    """
+    Verify owner permission for update/delete operations.
+
+    Flow:
+    1. Extract CN from request as current_owner
+    2. Query agent to get stored_owner
+    3. Check if stored_owner is None/empty (public agent) - allow any user
+    4. If stored_owner is set, verify current_owner matches
+
+    Returns:
+        current_owner (if verification succeeds)
+
+    Raises:
+        HTTPException: If permission denied or agent not found
+    """
+    if not OWNER_ISOLATION_ENABLED:
+        return None
+
+    current_owner = _get_owner_from_request(request)
+
+    agent_record = registry.get_by_key_with_owner(name, organization)
+    if not agent_record:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail=f"Agent ({name}, {organization}) not found"
+        )
+
+    stored_owner = agent_record.owner
+
+    if stored_owner is None or stored_owner == '':
+        return current_owner
+
+    if current_owner != stored_owner:
+        logger.warning(f"Permission denied: current_owner={current_owner}, stored_owner={stored_owner}")
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail=f"Permission denied: agent belongs to {stored_owner}"
+        )
+
+    return current_owner
+
+
 async def _check_agent_limit(registry: RegistryCore, client_ip: str, details: dict) -> None:
     """Check if registration count exceeds the limit, log and raise an exception if so."""
     if len(registry.get_agents()) >= int(config.get(AGENT_NUM_MAX, 40)):
@@ -266,11 +349,12 @@ async def _perform_registration(
         client_ip: str,
         details: dict,
         initial_status: str = 'published',
+        owner: Optional[str] = None,
 ) -> bool:
     """Execute the actual registration, handle ValueError and other exceptions, log accordingly."""
     try:
         save_handle = HandlerRegistry.get_handler(InterfaceType.INSERT)
-        success = await save_handle.handle(agent, initial_status=initial_status)
+        success = await save_handle.handle(agent, initial_status=initial_status, owner=owner)
         return success
     except ValueError as e:
         details["message"] = str(e)
@@ -301,12 +385,13 @@ async def _perform_update(
         name: str,
         organization: str,
         data: dict,
-        details: dict
+        details: dict,
+        owner: Optional[str] = None,
 ) -> bool:
     """Execute the actual update, handle ValueError and other exceptions, log accordingly."""
     try:
         update_handle = HandlerRegistry.get_handler(InterfaceType.UPDATE)
-        success = await update_handle.handle(name, organization, data)
+        success = await update_handle.handle(name, organization, data, owner=owner)
         await audit_handle.handle({
             "operation_name": OperationName.UPDATE_AGENT,
             "level": LogLevel.MINOR,
@@ -359,6 +444,10 @@ async def register_agent(
     body = await request.json()
     agent_cards = body.get("agentCards", [])
     client_ip = request.client.host
+    
+    owner = None
+    if OWNER_ISOLATION_ENABLED:
+        owner = _get_owner_from_request(request)
 
     authenticate_handle = HandlerRegistry.get_handler(InterfaceType.AUTHENTICATE)
     await authenticate_handle.handle(client_ip, request)
@@ -369,7 +458,7 @@ async def register_agent(
         for agent_card in agent_cards:
             agent = Parse(json.dumps(agent_card), AgentCard())
             logger.info(
-                f"Register agent request: name={agent.name}, org={agent.provider.organization}, client={client_ip}")
+                f"Register agent request: name={agent.name}, org={agent.provider.organization}, client={client_ip}, owner={owner}")
             details = {
                 "agentName": agent.name,
                 "organization": agent.provider.organization,
@@ -388,7 +477,7 @@ async def register_agent(
                 initial_status = 'published'
                 status_message = "Agent registered and published"
 
-            result = await _perform_registration(agent, client_ip, details, initial_status=initial_status)
+            result = await _perform_registration(agent, client_ip, details, initial_status=initial_status, owner=owner)
             await audit_handle.handle({
                 "operation_name": OperationName.REGISTER_AGENT,
                 "level": LogLevel.MINOR,
@@ -468,6 +557,11 @@ async def update_agent(
     body_json = await request.json()
     agent_cards = body_json.get("agentCards", [])
     client_ip = request.client.host
+    
+    owner = None
+    if OWNER_ISOLATION_ENABLED:
+        owner = await _verify_owner_permission(request, name, organization, registry)
+    
     authenticate_handle = HandlerRegistry.get_handler(InterfaceType.AUTHENTICATE)
     await authenticate_handle.handle(client_ip, request)
     acquired = False
@@ -477,7 +571,7 @@ async def update_agent(
         acquired = True
         for agent_card in agent_cards:
             agent_data = Parse(json.dumps(agent_card), AgentCard())
-            logger.info(f"Update agent request: name={name}, org={organization}, client={client_ip}")
+            logger.info(f"Update agent request: name={name}, org={organization}, client={client_ip}, owner={owner}")
             details = {
                 "agentName": agent_data.name,
                 "organization": agent_data.provider.organization,
@@ -487,7 +581,7 @@ async def update_agent(
             await _check_agent_limit(registry, client_ip, details)
 
             data = MessageToDict(agent_data, preserving_proto_field_name=True)
-            success = await _perform_update(client_ip, name, organization, data, details)
+            success = await _perform_update(client_ip, name, organization, data, details, owner=owner)
             if not success:
                 raise CustomHTTPException(status.HTTP_404_NOT_FOUND, "Agent not found")
             logger.info(f"Update agent success: name={name}, org={organization}")
@@ -507,6 +601,7 @@ async def deregister_agent(
         request: Request,
         name: str = Path(..., description="Agent name"),
         organization: str = Path(..., description="Agent organization"),
+        registry: RegistryCore = Depends(get_registry),
         _: Any = Depends(RateLimiter('deregister'))
 ):
     """
@@ -514,7 +609,12 @@ async def deregister_agent(
     Returns True if deleted, False if not found.
     """
     client_ip = request.client.host
-    logger.info(f"Deregister agent request: name={name}, org={organization}, client={client_ip}")
+    
+    owner = None
+    if OWNER_ISOLATION_ENABLED:
+        owner = await _verify_owner_permission(request, name, organization, registry)
+    
+    logger.info(f"Deregister agent request: name={name}, org={organization}, client={client_ip}, owner={owner}")
     authenticate_handle = HandlerRegistry.get_handler(InterfaceType.AUTHENTICATE)
     await authenticate_handle.handle(client_ip, request)
     acquired = False
@@ -527,7 +627,7 @@ async def deregister_agent(
         acquired = True
         try:
             deregister_handle = HandlerRegistry.get_handler(InterfaceType.DEREGISTER)
-            success = await deregister_handle.handle(name, organization)
+            success = await deregister_handle.handle(name, organization, owner=owner)
             if not success:
                 await audit_handle.handle({
                     "operation_name": OperationName.DEREGISTER_AGENT,
@@ -541,7 +641,7 @@ async def deregister_agent(
             await audit_handle.handle({
                 "operation_name": OperationName.DEREGISTER_AGENT,
                 "level": LogLevel.MINOR,
-                "result": OperationResult.FAILURE,
+                "result": OperationResult.SUCCESS,
                 "object_name": OperatorObject.AGENT,
                 "details": details,
                 "client_ip": client_ip
@@ -616,23 +716,23 @@ async def get_agent(
         acquired = True
         try:
             get_handle = HandlerRegistry.get_handler(InterfaceType.GET)
-            agent = await get_handle.handle(name, organization)
+            record = await get_handle.handle(name, organization)
 
-            if agent is None:
+            if record is None:
                 return {"agentCards": []}
 
             agent_status = registry.get_status(name, organization)
             if agent_status != 'published':
                 return {"agentCards": []}
 
-            agent_dict = MessageToDict(agent)
+            agent_dict = MessageToDict(record.agent_card)
             logger.info(f"Get agent result: {'found' if agent_dict else 'not found'} for name={name}, org={organization}")
             return {"agentCards": [agent_dict]}
         except Exception as e:
             logger.error(f"Error in get agent: {e}")
             raise CustomHTTPException(status.HTTP_500_INTERNAL_SERVER_ERROR,"Internal server error") from e
     except anyio.WouldBlock as e:
-        raise CustomHTTPException(status.HTTP_503_SERVICE_UNAVAILABLE,"Server is busy") from e
+        raise CustomHTTPException(status.HTTP_503_SERVICE_UNAVAILABLE, "Server is busy") from e
     finally:
         if acquired:
             get_semaphore.release()

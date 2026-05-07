@@ -53,3 +53,6 @@ FLOW_CTL_PARALLEL_JWK = "flowcontrol.parallelism.jwk"
 
 AGENT_NUM_MAX = "agent.num.max"
 FORWARDED_ALLOW_IPS = "forwarded_allow_ips"
+
+OWNER_ISOLATION_ENABLED = str(get_conf().get("owner.isolation.enabled", "false")).lower() == 'true'
+OWNER_VALIDATION_MODE = get_conf().get("owner.validation.mode", "strict")
