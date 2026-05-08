@@ -20,7 +20,7 @@ from pathlib import Path
 from typing import List, Optional, Dict, Any
 
 from a2a.types import AgentCard
-from google.protobuf.json_format import MessageToDict
+from google.protobuf.json_format import MessageToDict, Parse
 from loguru import logger
 
 from agent_registry.config import PERSISTENCE_METADATA_FILE
@@ -120,7 +120,7 @@ class FileStorage(StorageBackend):
             raise ValueError("Cannot change primary key(name or organization) during update.")
 
         try:
-            new_agent = AgentCard(**agent_data)
+            new_agent = Parse(json.dumps(agent_data), AgentCard())
         except Exception as e:
             logger.error(f"Invalid agent data for update: {e}")
             raise ValueError(f"Invalid agent data: {e}") from e

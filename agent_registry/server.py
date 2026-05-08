@@ -486,8 +486,7 @@ async def update_agent(
             validate_agent_card(agent_data)
             await _check_agent_limit(registry, client_ip, details)
 
-            data = MessageToDict(agent_data, preserving_proto_field_name=True)
-            success = await _perform_update(client_ip, name, organization, data, details)
+            success = await _perform_update(client_ip, name, organization, agent_card, details)
             if not success:
                 raise CustomHTTPException(status.HTTP_404_NOT_FOUND, "Agent not found")
             logger.info(f"Update agent success: name={name}, org={organization}")

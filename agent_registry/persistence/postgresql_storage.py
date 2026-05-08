@@ -20,7 +20,7 @@ from typing import List, Optional, Dict, Any, Tuple
 import psycopg2
 from psycopg2 import pool
 from a2a.types import AgentCard
-from google.protobuf.json_format import MessageToDict
+from google.protobuf.json_format import MessageToDict, Parse
 from loguru import logger
 
 from .base import StorageBackend
@@ -193,7 +193,7 @@ class PostgreSQLStorage(StorageBackend):
         conn = self.pool.getconn()
         try:
             with conn.cursor() as cur:
-                agent = AgentCard(**agent_data)
+                agent = Parse(json.dumps(agent_data), AgentCard())
                 agent_dict = MessageToDict(agent, preserving_proto_field_name=True)
                 now = datetime.utcnow()
                 cur.execute(

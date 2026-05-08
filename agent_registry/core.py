@@ -22,7 +22,7 @@ from datetime import datetime
 from typing import List, Dict, Tuple, Optional, Any
 
 from a2a.types import AgentCard
-from google.protobuf.json_format import MessageToDict
+from google.protobuf.json_format import MessageToDict, Parse
 from loguru import logger
 
 from agent_registry.config import PERSISTENCE_FILE, PERSISTENCE_METADATA_FILE, USE_VECTORDB, COLLECTION_NAME, PERSISTENCE_CONF, PERSISTENCE_MODE
@@ -244,7 +244,7 @@ class RegistryCore:
                 raise ValueError("Cannot change primary key(name or organization) during update.")
 
             try:
-                new_agent = AgentCard(**updated_data)
+                new_agent = Parse(json.dumps(updated_data), AgentCard())
             except Exception as e:
                 logger.error(f"Invalid agent data for update: {e}")
                 raise ValueError(f"Invalid agent data: {e}") from e
