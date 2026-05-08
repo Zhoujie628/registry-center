@@ -25,9 +25,11 @@ from a2a.types import AgentCard
 from google.protobuf.json_format import MessageToDict
 from loguru import logger
 
-from agent_registry.config import PERSISTENCE_FILE, PERSISTENCE_METADATA_FILE, USE_VECTORDB, COLLECTION_NAME, PERSISTENCE_CONF, PERSISTENCE_MODE
+from agent_registry.config import PERSISTENCE_FILE, PERSISTENCE_METADATA_FILE, USE_VECTORDB, COLLECTION_NAME, \
+    PERSISTENCE_CONF, PERSISTENCE_MODE
 from agent_registry.persistence import save_to_file, load_from_file
 from agent_registry.persistence import StorageRegistry, StorageBackend
+from agent_registry.persistence.base import AgentRecord
 from agent_registry.prompts import build_agent_selection_prompt
 from common.llm import get_llm_instance
 from common.llm.config.llm_config import get_llm_config_by_type, LLMType
@@ -36,9 +38,11 @@ from common.util.config_util import get_root_path
 from common.vector_db.vector_db_client.config.vector_db_client_registry import get_or_create_vectordb_tool_instance
 from common.vector_db.vector_db_client.config.vector_db_config import VectorDBType, get_vectordb_config_by_type
 
+
 def make_agent_key(name: str, organization: str) -> Tuple[str, str]:
     """Create a normalized key for indexing."""
     return name.strip(), organization.strip()
+
 
 class RegistryCore:
     """
@@ -47,7 +51,7 @@ class RegistryCore:
     Supports persistence to a JSON file, PostgreSQL, or vectordb.
     """
 
-    def __init__(self, persistence_file: str = PERSISTENCE_FILE, 
+    def __init__(self, persistence_file: str = PERSISTENCE_FILE,
                  persistence_metadata_file: str = PERSISTENCE_METADATA_FILE,
                  use_vectordb: bool = USE_VECTORDB,
                  persistence_mode: str = PERSISTENCE_MODE, persistence_conf: dict = PERSISTENCE_CONF):
@@ -59,6 +63,7 @@ class RegistryCore:
         self._lock = Lock()
         self._status_map: Dict[Tuple[str, str], str] = {}
         self._tags_map: Dict[Tuple[str, str], List[str]] = {}
+        self._owner_map: Dict[Tuple[str, str], Optional[str]] = {}
         self._created_at_map: Dict[Tuple[str, str], str] = {}
         self._updated_at_map: Dict[Tuple[str, str], str] = {}
 
@@ -95,7 +100,7 @@ class RegistryCore:
         """Create a normalized key for indexing."""
         return name.strip(), organization.strip()
 
-    def register(self, agent: AgentCard, use_vectordb: bool = USE_VECTORDB) -> bool:
+    def register(self, agent: AgentCard, use_vectordb: bool = USE_VECTORDB, owner: Optional[str] = None) -> bool:
         """
         Register a new agent. Returns True if successful, False if duplicate.
         Raises ValueError if agent lacks required fields (name, provider.organization).
@@ -106,28 +111,31 @@ class RegistryCore:
                 embedding = self.embedding_tool.embed(agent.description)
                 id = self._make_id(agent.name, agent.provider.organization)
                 insert_entity = {"embedding": embedding, "id": id, "name": agent.name, "description": agent.description,
-                                 "organization": agent.provider.organization, "agent_card": entity_str}
+                                 "organization": agent.provider.organization, "agent_card": entity_str, "owner": owner}
                 insert_data = {"collection_name": COLLECTION_NAME, "entity": insert_entity}
                 result = self.vectordb.insert_entity(insert_data)
-                logger.info(f"Registered agent in vectordb: {agent.name} (org={agent.provider.organization})")
+                logger.info(
+                    f"Registered agent in vectordb: {agent.name} (org={agent.provider.organization}, owner={owner})")
                 return result
             elif self.persistence_mode == 'postgresql':
-                result = self.storage.create(agent)
-                logger.info(f"Registered agent in postgresql: {agent.name} (org={agent.provider.organization})")
+                result = self.storage.create(agent, owner=owner)
+                logger.info(
+                    f"Registered agent in postgresql: {agent.name} (org={agent.provider.organization}, owner={owner})")
                 return result
             else:
                 key = self._make_key(agent.name, agent.provider.organization)
                 self._agents[key] = agent
                 self._status_map[key] = 'published'
+                self._owner_map[key] = owner
                 now = datetime.utcnow().isoformat()
                 self._created_at_map[key] = now
                 self._updated_at_map[key] = now
                 self._save()
-                logger.info(f"Registered agent: {agent.name} (org={agent.provider.organization})")
+                logger.info(f"Registered agent: {agent.name} (org={agent.provider.organization}, owner={owner})")
                 return True
 
-    def register_with_status(self, agent: AgentCard, initial_status: str = 'published', 
-                             use_vectordb: bool = USE_VECTORDB) -> bool:
+    def register_with_status(self, agent: AgentCard, initial_status: str = 'published',
+                             use_vectordb: bool = USE_VECTORDB, owner: Optional[str] = None) -> bool:
         """
         Register a new agent with specified initial status.
         
@@ -135,6 +143,7 @@ class RegistryCore:
             agent: Agent to register
             initial_status: Initial status ('registered' or 'published')
             use_vectordb: Whether to use vector database
+            owner: Agent owner (from TLS certificate CN)
         
         Returns:
             bool: True if successful, False if duplicate
@@ -144,24 +153,25 @@ class RegistryCore:
                 entity_str = json.dumps(MessageToDict(agent, preserving_proto_field_name=True))
                 embedding = self.embedding_tool.embed(agent.description)
                 id = self._make_id(agent.name, agent.provider.organization)
-                insert_entity = {"embedding": embedding, "id": id, "name": agent.name, 
+                insert_entity = {"embedding": embedding, "id": id, "name": agent.name,
                                  "description": agent.description,
-                                 "organization": agent.provider.organization, 
-                                 "agent_card": entity_str, "status": initial_status}
+                                 "organization": agent.provider.organization,
+                                 "agent_card": entity_str, "status": initial_status, "owner": owner}
                 insert_data = {"collection_name": COLLECTION_NAME, "entity": insert_entity}
                 return self.vectordb.insert_entity(insert_data)
             elif self.persistence_mode == 'postgresql':
-                agent.status = initial_status
-                return self.storage.create(agent)
+                return self.storage.create(agent, owner=owner, status=initial_status)
             else:
                 key = self._make_key(agent.name, agent.provider.organization)
                 self._agents[key] = agent
                 self._status_map[key] = initial_status
+                self._owner_map[key] = owner
                 now = datetime.utcnow().isoformat()
                 self._created_at_map[key] = now
                 self._updated_at_map[key] = now
                 self._save()
-                logger.info(f"Registered agent: {agent.name} (org={agent.provider.organization}, status={initial_status})")
+                logger.info(
+                    f"Registered agent: {agent.name} (org={agent.provider.organization}, status={initial_status}, owner={owner})")
                 return True
 
     def find_exact(self, name: Optional[str] = None, organization: Optional[str] = None,
@@ -212,74 +222,96 @@ class RegistryCore:
             return self._agents
 
     def update(self, name: str, organization: str, agent_data: Dict[str, Any],
-               use_vectordb: bool = USE_VECTORDB) -> bool:
+               use_vectordb: bool = USE_VECTORDB, owner: Optional[str] = None) -> bool:
         """
         Update an existing agent. The primary key (name, organization) cannot be changed.
         Return True if successful, False if not found.
         """
-        if use_vectordb:
-            entity_str = json.dumps(agent_data)
-            embedding = self.embedding_tool.embed(agent_data["description"])
-            key = self._make_id(agent_data["name"], agent_data["provider"]["organization"])
-            insert_entity = {"id": key, "embedding": embedding, "name": agent_data["name"],
-                             "description": agent_data["description"],
-                             "organization": agent_data["provider"]["organization"], "agent_card": entity_str}
-            update_data = {"collection_name": COLLECTION_NAME, "entity": insert_entity}
-            result = self.vectordb.update_entity(update_data)
-            logger.info(f"Updated agent in vectordb: {name}({organization})")
-            return result
-        elif self.persistence_mode == 'postgresql':
-            result = self.storage.update(name, organization, agent_data)
-            logger.info(f"Updated agent in postgresql: {name}({organization})")
-            return result
-        else:
-            key = self._make_key(name, organization)
-            existing_agent = self._agents.get(key)
-            if not existing_agent:
-                logger.info(f"Update failed: agent not found({name},{organization})")
-                return False
+        with self._lock:
+            if use_vectordb:
+                entity_str = json.dumps(agent_data)
+                embedding = self.embedding_tool.embed(agent_data["description"])
+                key = self._make_id(agent_data["name"], agent_data["provider"]["organization"])
+                insert_entity = {"id": key, "embedding": embedding, "name": agent_data["name"],
+                                 "description": agent_data["description"],
+                                 "organization": agent_data["provider"]["organization"], "agent_card": entity_str,
+                                 "owner": owner}
+                update_data = {"collection_name": COLLECTION_NAME, "entity": insert_entity}
+                result = self.vectordb.update_entity(update_data)
+                logger.info(f"Updated agent in vectordb: {name}({organization}, owner={owner})")
+                return result
+            elif self.persistence_mode == 'postgresql':
+                result = self.storage.update(name, organization, agent_data, owner=owner)
+                logger.info(f"Updated agent in postgresql: {name}({organization}, owner={owner})")
+                return result
+            else:
+                key = self._make_key(name, organization)
+                existing_agent = self._agents.get(key)
+                if not existing_agent:
+                    logger.info(f"Update failed: agent not found({name},{organization})")
+                    return False
 
-            updated_data = agent_data
-            if updated_data.get("name") != name or updated_data.get("provider", {}).get("organization") != organization:
-                raise ValueError("Cannot change primary key(name or organization) during update.")
+                stored_owner = self._owner_map.get(key)
+                if stored_owner is not None and stored_owner != '':
+                    if owner != stored_owner:
+                        logger.warning(
+                            f"Update denied: owner mismatch for {name} (stored={stored_owner}, request={owner})")
+                        return False
 
-            try:
-                new_agent = AgentCard(**updated_data)
-            except Exception as e:
-                logger.error(f"Invalid agent data for update: {e}")
-                raise ValueError(f"Invalid agent data: {e}") from e
+                updated_data = agent_data
+                if updated_data.get("name") != name or updated_data.get("provider", {}).get(
+                        "organization") != organization:
+                    raise ValueError("Cannot change primary key(name or organization) during update.")
 
-            self._agents[key] = new_agent
-            self._save()
-            logger.info(f"Updated agent: {new_agent.name}(org={new_agent.provider.organization})")
-            return True
+                try:
+                    new_agent = AgentCard(**updated_data)
+                except Exception as e:
+                    logger.error(f"Invalid agent data for update: {e}")
+                    raise ValueError(f"Invalid agent data: {e}") from e
 
-    def deregister(self, name: str, organization: str, use_vectordb: bool = USE_VECTORDB) -> bool:
+                self._agents[key] = new_agent
+                self._updated_at_map[key] = datetime.utcnow().isoformat()
+                self._save()
+                logger.info(f"Updated agent: {new_agent.name}(org={new_agent.provider.organization}, owner={owner})")
+                return True
+
+    def deregister(self, name: str, organization: str, use_vectordb: bool = USE_VECTORDB,
+                   owner: Optional[str] = None) -> bool:
         """
         Remove an agent. Returns True if deleted, False if not found.
         """
-        if use_vectordb:
-            delete_data = {"collection_name": COLLECTION_NAME, "id": self._make_id(name, organization)}
-            result = self.vectordb.delete_entity(delete_data)
-            logger.info(f"Deregistered agent from vectordb: {name}({organization})")
-            return result
-        elif self.persistence_mode == 'postgresql':
-            result = self.storage.delete(name, organization)
-            logger.info(f"Deregistered agent from postgresql: {name}({organization})")
-            return result
-        else:
-            key = self._make_key(name, organization)
-            if key not in self._agents:
-                logger.info(f"Deregister failed: agent not found ({name},{organization})")
-                return False
-            del self._agents[key]
-            self._status_map.pop(key, None)
-            self._tags_map.pop(key, None)
-            self._created_at_map.pop(key, None)
-            self._updated_at_map.pop(key, None)
-            self._save()
-            logger.info(f"Deregistered agent: {name}({organization})")
-            return True
+        with self._lock:
+            if use_vectordb:
+                delete_data = {"collection_name": COLLECTION_NAME, "id": self._make_id(name, organization)}
+                result = self.vectordb.delete_entity(delete_data)
+                logger.info(f"Deregistered agent from vectordb: {name}({organization}, owner={owner})")
+                return result
+            elif self.persistence_mode == 'postgresql':
+                result = self.storage.delete(name, organization, owner=owner)
+                logger.info(f"Deregistered agent from postgresql: {name}({organization}, owner={owner})")
+                return result
+            else:
+                key = self._make_key(name, organization)
+                if key not in self._agents:
+                    logger.info(f"Deregister failed: agent not found ({name},{organization})")
+                    return False
+
+                stored_owner = self._owner_map.get(key)
+                if stored_owner is not None and stored_owner != '':
+                    if owner != stored_owner:
+                        logger.warning(
+                            f"Deregister denied: owner mismatch for {name} (stored={stored_owner}, request={owner})")
+                        return False
+
+                del self._agents[key]
+                self._status_map.pop(key, None)
+                self._tags_map.pop(key, None)
+                self._owner_map.pop(key, None)
+                self._created_at_map.pop(key, None)
+                self._updated_at_map.pop(key, None)
+                self._save()
+                logger.info(f"Deregistered agent: {name}({organization}, owner={owner})")
+                return True
 
     def retrieve_by_task(self, task: str, top_n: int, use_vectordb: bool = USE_VECTORDB) -> List[AgentCard]:
         """
@@ -372,10 +404,69 @@ class RegistryCore:
             else:
                 return None
         elif self.persistence_mode == 'postgresql':
-            return self.storage.find_by_key(name, organization)
+            record = self.storage.find_by_key(name, organization)
+            return record.agent_card if record else None
         else:
             key = self._make_key(name, organization)
             return self._agents.get(key)
+
+    def get_by_key_with_owner(self, name: str, organization: str, owner: Optional[str] = None,
+                              use_vectordb: bool = USE_VECTORDB) -> Optional[AgentRecord]:
+        """Search a single agent by exact name and organization, returns AgentRecord with owner."""
+        if use_vectordb:
+            query_data = {"collection_name": COLLECTION_NAME, "key": "id", "value": self._make_id(name, organization)}
+            result = self.vectordb.query_by_key(query_data)
+            if len(result) > 0:
+                agent_data = result[0]
+                stored_owner = agent_data.get("owner")
+                return AgentRecord(
+                    agent_card=AgentCard(**agent_data),
+                    owner=stored_owner
+                )
+            else:
+                return None
+        elif self.persistence_mode == 'postgresql':
+            return self.storage.find_by_key(name, organization, owner=owner)
+        else:
+            key = self._make_key(name, organization)
+            agent = self._agents.get(key)
+            if agent:
+                stored_owner = self._owner_map.get(key)
+                if owner is not None and stored_owner is not None and stored_owner != '' and stored_owner != owner:
+                    return None
+                return AgentRecord(
+                    agent_card=agent,
+                    owner=stored_owner,
+                    status=self._status_map.get(key, 'published'),
+                    created_at=self._created_at_map.get(key, ''),
+                    updated_at=self._updated_at_map.get(key, ''),
+                    tags=self._tags_map.get(key, [])
+                )
+            return None
+
+    def find_by_owner(self, owner: str, use_vectordb: bool = USE_VECTORDB) -> List[AgentRecord]:
+        """Find all agents belonging to a specific owner."""
+        if use_vectordb:
+            query_data = {"collection_name": COLLECTION_NAME, "key": "owner", "value": owner}
+            results = self.vectordb.query_by_key(query_data)
+            return [AgentRecord(agent_card=AgentCard(**r), owner=r.get("owner")) for r in results]
+        elif self.persistence_mode == 'postgresql':
+            return self.storage.find_by_owner(owner)
+        else:
+            result = []
+            for key, stored_owner in self._owner_map.items():
+                if stored_owner == owner:
+                    agent = self._agents.get(key)
+                    if agent:
+                        result.append(AgentRecord(
+                            agent_card=agent,
+                            owner=stored_owner,
+                            status=self._status_map.get(key, 'published'),
+                            created_at=self._created_at_map.get(key, ''),
+                            updated_at=self._updated_at_map.get(key, ''),
+                            tags=self._tags_map.get(key, [])
+                        ))
+            return result
 
     def _save(self) -> None:
         """Persist current agents and status map to files."""
@@ -396,6 +487,7 @@ class RegistryCore:
         registry_data = []
         for key, status in self._status_map.items():
             tags = self._tags_map.get(key, [])
+            owner = self._owner_map.get(key)
             created_at = self._created_at_map.get(key, "")
             updated_at = self._updated_at_map.get(key, "")
             registry_data.append({
@@ -403,6 +495,7 @@ class RegistryCore:
                 "agent_name": key[0],
                 "status": status,
                 "tag": tags,
+                "owner": owner,
                 "created_at": created_at,
                 "updated_at": updated_at
             })
@@ -435,6 +528,7 @@ class RegistryCore:
                     key = self._make_key(item['agent_name'], item['organization'])
                     self._status_map[key] = item.get('status', 'published')
                     self._tags_map[key] = item.get('tag', [])
+                    self._owner_map[key] = item.get('owner')
                     self._created_at_map[key] = item.get('created_at', '')
                     self._updated_at_map[key] = item.get('updated_at', '')
                 except Exception as e:
@@ -444,6 +538,7 @@ class RegistryCore:
             for key in self._agents.keys():
                 self._status_map[key] = 'published'
                 self._tags_map[key] = []
+                self._owner_map[key] = None
                 self._created_at_map[key] = ''
                 self._updated_at_map[key] = ''
             logger.info("No registry file found, defaulting all agents to published status")
@@ -576,14 +671,14 @@ class RegistryCore:
                 if not agent:
                     logger.warning(f"Agent not found: {name} ({organization})")
                     return False
-                
+
                 return self.storage.update_status(name, organization, new_status)
             else:
                 key = self._make_key(name, organization)
                 if key not in self._agents:
                     logger.warning(f"Agent not found: {name} ({organization})")
                     return False
-                
+
                 self._status_map[key] = new_status
                 self._updated_at_map[key] = datetime.utcnow().isoformat()
                 self._save_registry()

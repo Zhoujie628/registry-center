@@ -23,7 +23,7 @@ from a2a.types import AgentCard
 from google.protobuf.json_format import MessageToDict
 from loguru import logger
 
-from .base import StorageBackend
+from .base import StorageBackend, AgentRecord
 from .sql_queries import PostgreSQLQueries
 
 class PostgreSQLStorage(StorageBackend):
@@ -86,21 +86,25 @@ class PostgreSQLStorage(StorageBackend):
                 cur.execute(PostgreSQLQueries.CREATE_TABLE.value)
                 cur.execute(PostgreSQLQueries.ADD_COLUMN_STATUS.value)
                 cur.execute(PostgreSQLQueries.ADD_COLUMN_TAG.value)
+                cur.execute(PostgreSQLQueries.ADD_COLUMN_OWNER.value)
+                cur.execute(PostgreSQLQueries.DROP_OLD_UNIQUE_INDEX.value)
+                cur.execute(PostgreSQLQueries.CREATE_OWNER_UNIQUE_INDEX.value)
                 cur.execute(PostgreSQLQueries.CREATE_INDEX_ORG.value)
                 cur.execute(PostgreSQLQueries.CREATE_INDEX_NAME.value)
                 cur.execute(PostgreSQLQueries.CREATE_INDEX_STATUS.value)
+                cur.execute(PostgreSQLQueries.CREATE_INDEX_OWNER.value)
                 cur.execute(PostgreSQLQueries.CREATE_INDEX_GIN.value)
                 logger.info("Table 'agent_card' and indexes created/verified")
         finally:
             connection_pool.putconn(conn)
 
-    def _get_agent_fields(self, agent: AgentCard) -> tuple:
+    def _get_agent_fields(self, agent: AgentCard, owner: Optional[str] = None, status: str = 'published') -> tuple:
         agent_dict = MessageToDict(agent, preserving_proto_field_name=True)
         now = datetime.utcnow()
-        status = getattr(agent, 'status', 'published')
         return (
             agent.name,
             agent.provider.organization,
+            owner,
             agent_dict.get('description'),
             agent_dict.get('documentation_url'),
             agent_dict.get('version'),
@@ -115,34 +119,42 @@ class PostgreSQLStorage(StorageBackend):
             now
         )
 
-    def create(self, agent: AgentCard) -> bool:
+    def create(self, agent: AgentCard, owner: Optional[str] = None, status: str = 'published') -> bool:
         conn = self.pool.getconn()
         try:
             with conn.cursor() as cur:
                 cur.execute(
-                    PostgreSQLQueries.CREATE_AGENT.value,
-                    self._get_agent_fields(agent)
+                    PostgreSQLQueries.CREATE_AGENT_WITH_OWNER.value,
+                    self._get_agent_fields(agent, owner, status)
                 )
                 conn.commit()
-            result = self.find_by_key(agent.name, agent.provider.organization)
-            if result:
-                logger.info(f"Created agent in PostgreSQL: {agent.name} (org={agent.provider.organization})")
-            return result is not None
+                affected = cur.rowcount
+            if affected > 0:
+                logger.info(f"Created agent in PostgreSQL: {agent.name} (org={agent.provider.organization}, owner={owner}, status={status})")
+            return affected > 0
         finally:
             self.pool.putconn(conn)
 
-    def find_by_key(self, name: str, organization: str) -> Optional[AgentCard]:
+    def find_by_key(self, name: str, organization: str, owner: Optional[str] = None) -> Optional[AgentRecord]:
         conn = self.pool.getconn()
         try:
             with conn.cursor() as cur:
-                cur.execute(
-                    PostgreSQLQueries.FIND_BY_KEY.value,
-                    (name, organization)
-                )
+                if owner is not None:
+                    cur.execute(
+                        PostgreSQLQueries.FIND_BY_KEY_WITH_OWNER.value,
+                        (name, organization, owner)
+                    )
+                else:
+                    cur.execute(
+                        PostgreSQLQueries.FIND_BY_KEY_ANY_OWNER.value,
+                        (name, organization)
+                    )
                 row = cur.fetchone()
             if row:
                 data = row[0] if isinstance(row[0], dict) else json.loads(row[0])
-                return AgentCard(**data)
+                agent = AgentCard(**data)
+                stored_owner = row[1] if len(row) > 1 else None
+                return AgentRecord(agent_card=agent, owner=stored_owner)
             return None
         finally:
             self.pool.putconn(conn)
@@ -189,40 +201,61 @@ class PostgreSQLStorage(StorageBackend):
         finally:
             self.pool.putconn(conn)
 
-    def update(self, name: str, organization: str, agent_data: Dict[str, Any]) -> bool:
+    def update(self, name: str, organization: str, agent_data: Dict[str, Any], owner: Optional[str] = None) -> bool:
         conn = self.pool.getconn()
         try:
             with conn.cursor() as cur:
                 agent = AgentCard(**agent_data)
                 agent_dict = MessageToDict(agent, preserving_proto_field_name=True)
                 now = datetime.utcnow()
-                cur.execute(
-                    PostgreSQLQueries.UPDATE_AGENT.value,
-                    (
-                        json.dumps(agent_dict),
-                        now,
-                        name,
-                        organization
+                if owner is not None:
+                    cur.execute(
+                        PostgreSQLQueries.UPDATE_AGENT_WITH_OWNER.value,
+                        (json.dumps(agent_dict), now, name, organization, owner)
                     )
-                )
+                else:
+                    existing = self.find_by_key(name, organization)
+                    if existing and existing.owner:
+                        cur.execute(
+                            PostgreSQLQueries.UPDATE_AGENT_WITH_OWNER.value,
+                            (json.dumps(agent_dict), now, name, organization, existing.owner)
+                        )
+                    else:
+                        cur.execute(
+                            PostgreSQLQueries.UPDATE_AGENT.value,
+                            (json.dumps(agent_dict), now, name, organization)
+                        )
                 conn.commit()
                 affected = cur.rowcount
-            logger.info(f"Updated agent in PostgreSQL: {name} (org={organization}), affected={affected}")
+            logger.info(f"Updated agent in PostgreSQL: {name} (org={organization}, owner={owner}), affected={affected}")
             return affected > 0
         finally:
             self.pool.putconn(conn)
 
-    def delete(self, name: str, organization: str) -> bool:
+    def delete(self, name: str, organization: str, owner: Optional[str] = None) -> bool:
         conn = self.pool.getconn()
         try:
             with conn.cursor() as cur:
-                cur.execute(
-                    PostgreSQLQueries.DELETE_AGENT.value,
-                    (name, organization)
-                )
+                if owner is not None:
+                    cur.execute(
+                        PostgreSQLQueries.DELETE_AGENT_WITH_OWNER.value,
+                        (name, organization, owner)
+                    )
+                else:
+                    existing = self.find_by_key(name, organization)
+                    if existing and existing.owner:
+                        cur.execute(
+                            PostgreSQLQueries.DELETE_AGENT_WITH_OWNER.value,
+                            (name, organization, existing.owner)
+                        )
+                    else:
+                        cur.execute(
+                            PostgreSQLQueries.DELETE_AGENT.value,
+                            (name, organization)
+                        )
                 conn.commit()
                 affected = cur.rowcount
-            logger.info(f"Deleted agent from PostgreSQL: {name} (org={organization}), affected={affected}")
+            logger.info(f"Deleted agent from PostgreSQL: {name} (org={organization}, owner={owner}), affected={affected}")
             return affected > 0
         finally:
             self.pool.putconn(conn)
@@ -336,6 +369,26 @@ class PostgreSQLStorage(StorageBackend):
             if result and result[0]:
                 return result[0].isoformat() if hasattr(result[0], 'isoformat') else str(result[0])
             return ''
+        finally:
+            self.pool.putconn(conn)
+
+    def find_by_owner(self, owner: str) -> List[AgentRecord]:
+        conn = self.pool.getconn()
+        try:
+            with conn.cursor() as cur:
+                cur.execute(
+                    PostgreSQLQueries.FIND_BY_OWNER.value,
+                    (owner,)
+                )
+                rows = cur.fetchall()
+            result = []
+            for row in rows:
+                data = row[0] if isinstance(row[0], dict) else json.loads(row[0])
+                agent = AgentCard(**data)
+                stored_owner = row[1] if len(row) > 1 else None
+                result.append(AgentRecord(agent_card=agent, owner=stored_owner))
+            logger.debug(f"Found {len(result)} agents by owner '{owner}' in PostgreSQL")
+            return result
         finally:
             self.pool.putconn(conn)
 

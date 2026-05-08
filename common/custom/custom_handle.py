@@ -52,7 +52,8 @@ class InsertHandler(BaseHandler):
 
     async def handle(self, *args, **kwargs):
         initial_status = kwargs.get('initial_status', 'published')
-        return get_registry().register_with_status(*args, initial_status=initial_status)
+        owner = kwargs.get('owner')
+        return get_registry().register_with_status(*args, initial_status=initial_status, owner=owner)
 
 
 class QueryHandler(BaseHandler):
@@ -61,11 +62,13 @@ class QueryHandler(BaseHandler):
 
 class UpdateHandler(BaseHandler):
     async def handle(self, *args, **kwargs):
-        return get_registry().update(*args)
+        owner = kwargs.get('owner')
+        return get_registry().update(*args, owner=owner)
 
 class GetHandler(BaseHandler):
     async def handle(self, *args, **kwargs):
-        return get_registry().get_by_key(*args)
+        owner = kwargs.get('owner')
+        return get_registry().get_by_key_with_owner(*args, owner=owner)
 
 class RetrieveHandler(BaseHandler):
     async def handle(self, *args, **kwargs):
@@ -73,7 +76,8 @@ class RetrieveHandler(BaseHandler):
 
 class DeregisterHandler(BaseHandler):
     async def handle(self, *args, **kwargs):
-        return get_registry().deregister(*args)
+        owner = kwargs.get('owner')
+        return get_registry().deregister(*args, owner=owner)
 
 # ==================== Registry ====================
 class HandlerRegistry:

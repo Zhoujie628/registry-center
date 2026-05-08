@@ -33,19 +33,29 @@ CONN_TIMEOUT = "connection.timeout"
 CONN_MAX = "connection.max"
 FLOW_CTL_REGISTER = "flowcontrol.ratelimit.register"
 FLOW_CTL_PARALLEL_REGISTER = "flowcontrol.parallelism.register"
+
 FLOW_CTL_QUERY = "flowcontrol.ratelimit.query"
 FLOW_CTL_PARALLEL_QUERY = "flowcontrol.parallelism.query"
+
 FLOW_CTL_UPDATE = "flowcontrol.ratelimit.update"
 FLOW_CTL_PARALLEL_UPDATE = "flowcontrol.parallelism.update"
+
 FLOW_CTL_GET = "flowcontrol.ratelimit.get"
 FLOW_CTL_PARALLEL_GET = "flowcontrol.parallelism.get"
+
 FLOW_CTL_RETRIEVE = "flowcontrol.ratelimit.retrieve"
 FLOW_CTL_PARALLEL_RETRIEVE = "flowcontrol.parallelism.retrieve"
+
 FLOW_CTL_DEREGISTER = "flowcontrol.ratelimit.deregister"
 FLOW_CTL_PARALLEL_DEREGISTER = "flowcontrol.parallelism.deregister"
+
 FLOW_CTL_JWK = "flowcontrol.ratelimit.jwk"
 FLOW_CTL_PARALLEL_JWK = "flowcontrol.parallelism.jwk"
+
 AGENT_NUM_MAX = "agent.num.max"
 FORWARDED_ALLOW_IPS = "forwarded_allow_ips"
 TAG_MAX_COUNT = "tag.max.count"
 TAG_MAX_LENGTH = "tag.max.length"
+
+OWNER_ISOLATION_ENABLED = str(get_conf().get("owner.isolation.enabled", "false")).lower() == 'true'
+OWNER_VALIDATION_MODE = get_conf().get("owner.validation.mode", "strict")
