@@ -75,7 +75,7 @@ class RegistryCenterInternalService:
 
     def start(self):
         if IS_WINDOWS:
-            logger.error("CLI client initialization failed: UDS (Unix Domain Socket) is not supported on Windows. Please run in a Linux environment.")
+            logger.error("Registry center startup failed: Windows environment is not supported. Please run in a Linux environment.")
             return
         
         self._ensure_socket_dir()

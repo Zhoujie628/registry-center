@@ -60,11 +60,11 @@ class UDSClient:
             Response dict with success, error, message, data fields
         """
         if self.is_windows:
-            logger.error("CLI client initialization failed: UDS (Unix Domain Socket) is not supported on Windows. Please run in a Linux environment.")
+            logger.error("Registry center startup failed: Windows environment is not supported. Please run in a Linux environment.")
             return {
                 "success": False,
                 "error": "Platform not supported",
-                "message": "CLI client initialization failed: UDS (Unix Domain Socket) is not supported on Windows. Please run in a Linux environment."
+                "message": "Registry center startup failed: Windows environment is not supported. Please run in a Linux environment."
             }
         
         request = {
@@ -182,5 +182,5 @@ def get_uds_client() -> UDSClient:
     if _client is None:
         _client = UDSClient()
         if IS_WINDOWS:
-            logger.error("CLI client initialization failed: UDS (Unix Domain Socket) is not supported on Windows. Please run in a Linux environment.")
+            logger.error("Registry center startup failed: Windows environment is not supported. Please run in a Linux environment.")
     return _client
