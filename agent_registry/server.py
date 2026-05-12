@@ -465,8 +465,6 @@ async def register_agent(
     if OWNER_ISOLATION_ENABLED:
         owner = _get_owner_from_request(request)
 
-    logger.info(client_ip)
-
     authenticate_handle = HandlerRegistry.get_handler(InterfaceType.AUTHENTICATE)
     await authenticate_handle.handle(client_ip, request)
     acquired = False
@@ -484,8 +482,12 @@ async def register_agent(
             }
             await _check_agent_limit(registry, client_ip, details)
             await _check_duplicate_agent(agent, registry, client_ip, details)
-            validate_agent_card(agent)
-            
+            try:
+                validate_agent_card(agent)
+            except HTTPException as e:
+                logger.error(f"Agent card validation failed: {agent.name}, {agent.provider.organization}")
+                raise CustomHTTPException(e.status_code, e.detail)
+
             signature_result = signature_validator.validate_agent_card(agent)
             if not signature_result.is_valid:
                 details["message"] = signature_result.error_message
@@ -501,7 +503,7 @@ async def register_agent(
                     status.HTTP_401_UNAUTHORIZED,
                     signature_result.error_message or "Signature verification failed"
                 )
-            
+
             logger.info(f"Register agent success: name={agent.name}, org={agent.provider.organization}")
 
             approval_enabled = config.get('agent_approval_enabled', 'false')
@@ -523,6 +525,11 @@ async def register_agent(
         return Response(status_code=status.HTTP_201_CREATED)
     except anyio.WouldBlock as e:
         raise CustomHTTPException(status.HTTP_503_SERVICE_UNAVAILABLE, "Server is busy") from e
+    except HTTPException as e:
+        raise e
+    except Exception as e:
+        logger.error(f"Unexpected error in registry:{e}")
+        raise CustomHTTPException(status.HTTP_500_INTERNAL_SERVER_ERROR, "Internal server error") from e
     finally:
         if acquired:
             register_semaphore.release()
@@ -612,8 +619,12 @@ async def update_agent(
                 "organization": agent_data.provider.organization,
                 "url": agent_data.provider.url,
             }
-            validate_agent_card(agent_data)
-            
+            try:
+                validate_agent_card(agent_data)
+            except HTTPException as e:
+                logger.error(f"Agent card validation failed: {agent_data.name}, {agent_data.provider.organization}")
+                raise CustomHTTPException(e.status_code, e.detail)
+
             signature_result = signature_validator.validate_agent_card(agent_data)
             if not signature_result.is_valid:
                 details["message"] = signature_result.error_message
@@ -629,7 +640,7 @@ async def update_agent(
                     status.HTTP_401_UNAUTHORIZED,
                     signature_result.error_message or "Signature verification failed"
                 )
-            
+
             await _check_agent_limit(registry, client_ip, details)
 
             data = MessageToDict(agent_data, preserving_proto_field_name=True)
@@ -640,6 +651,8 @@ async def update_agent(
         return Response(status_code=status.HTTP_200_OK)
     except ValueError as e:
         raise CustomHTTPException(status.HTTP_400_BAD_REQUEST, str(e)) from e
+    except HTTPException as e:
+        raise e
     except Exception as e:
         logger.error(f"Unexpected error in full update:{e}")
         raise CustomHTTPException(status.HTTP_500_INTERNAL_SERVER_ERROR, "Internal server error") from e
@@ -795,21 +808,67 @@ def close_registry():
     registry.close()
 
 
-try:
-    app.add_event_handler("startup", initialize_registry)
-    app.add_event_handler("shutdown", close_registry)
-except AttributeError:
-    from contextlib import asynccontextmanager
-    
-    @asynccontextmanager
-    async def lifespan(app_instance):
-        await initialize_registry()
-        yield
-        close_registry()
-    
-    app.router.lifespan_context = lifespan
+app.add_event_handler("startup", initialize_registry)
+app.add_event_handler("shutdown", close_registry)
 
 
 def _make_agent_key(name: str, organization: str) -> Tuple[str, str]:
     """Create a normalized key for indexing."""
     return name.strip(), organization.strip()
+
+
+# ---------- JWK Endpoint ----------
+jwk_provider = JWKProvider(cert_path=config.get("JWK_CERT_PATH", "cert.pem"))
+jwk_kid = config.get("JWK_KID", None)
+
+jwk_rate_item = parse_rate_limit('jwk')
+
+
+@app.get("/.well-known/jwks.json")
+async def get_jwks(request: Request):
+    """
+    Download public key in PEM format for JWT signature verification.
+    This endpoint does not require authentication.
+    """
+    if jwk_rate_item and not await async_hit(jwk_rate_item, request.client.host):
+        raise HTTPException(
+            status_code=status.HTTP_429_TOO_MANY_REQUESTS,
+            detail="Too Many Requests"
+        )
+
+    acquired = False
+    try:
+        jwk_semaphore.acquire_nowait()
+        acquired = True
+        public_key_pem = jwk_provider.get_public_key_pem()
+        return Response(
+            content=public_key_pem,
+            media_type="application/x-pem-file",
+            headers={
+                "Content-Disposition": "attachment; filename=public_key.pem"
+            }
+        )
+    except CertLoadError as e:
+        logger.error(f"Failed to load JWK: {e}")
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=str(e)
+        )
+    except Exception as e:
+        logger.error(f"Unexpected error in JWK endpoint: {e}")
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail="Internal server error"
+        )
+    finally:
+        if acquired:
+            jwk_semaphore.release()
+
+
+def _enhance_jwk(jwk: PyJWK) -> Dict[str, Any]:
+    """Enhance JWK with kid and key_ops fields."""
+    jwk_dict = jwk._jwk_data.copy()
+    if jwk_kid:
+        jwk_dict["kid"] = jwk_kid
+    jwk_dict["key_ops"] = ["verify"]
+    return jwk_dict
