@@ -16,6 +16,7 @@
 # agent_registry/start.py
 import asyncio
 import os
+import platform
 import ssl
 import sys
 import threading
@@ -35,6 +36,8 @@ from common.log.audit_logger import LogLevel, OperationResult, OperatorObject, O
 from common.util.cipher_util import DEFAULT_ENCODING
 from common.util.conf_util import conf_singleton_obj, load_cert_password, set_ssl_folder_permissions
 from common.util.config_util import get_conf
+
+IS_WINDOWS = platform.system() == "Windows"
 
 audit_handle = HandlerRegistry.get_handler(InterfaceType.AUDIT)
 
@@ -64,7 +67,10 @@ async def record_startup_log():
     })
 
 
-app.add_event_handler("startup", record_startup_log)
+try:
+    app.add_event_handler("startup", record_startup_log)
+except AttributeError:
+    pass
 
 
 def customized_create_ssl_context(
@@ -134,6 +140,11 @@ class CustomUvicornServer:
 
 def start_internal_service():
     global _internal_service, _internal_thread
+    
+    if IS_WINDOWS:
+        logger.error("Registry center startup failed: Windows environment is not supported. Please run in a Linux environment.")
+        return
+    
     try:
         _internal_service = RegistryCenterInternalService()
         _internal_thread = threading.Thread(target=_internal_service.start, daemon=True)
@@ -145,6 +156,10 @@ def start_internal_service():
 
 def stop_internal_service():
     global _internal_service
+    
+    if IS_WINDOWS:
+        return
+    
     if _internal_service:
         try:
             _internal_service.stop()
@@ -154,6 +169,10 @@ def stop_internal_service():
 
 
 def main():
+    if IS_WINDOWS:
+        logger.error("Registry center startup failed: Windows environment is not supported. Please run in a Linux environment.")
+        sys.exit("Registry center startup failed: Windows environment is not supported. Please run in a Linux environment.")
+    
     server_config = get_conf()
 
     start_internal_service()
@@ -164,15 +183,12 @@ def main():
         uvicorn.run(app, host=server_config.get('ip', "127.0.0.1"), port=int(server_config.get('port', 5000)))
     else:
         try:
-            # Validate configuration
             conf_obj = conf_singleton_obj
             result = CertValidator(conf_obj).validate()
             if not result.is_valid:
                 stop_internal_service()
                 sys.exit(result.message)
-            # After validation, set etc/ssl directory permissions to 700 and file permissions to 600
             set_ssl_folder_permissions()
-            # Create and start server
             server = CustomUvicornServer(server_config, conf_obj)
             server.run()
         except Exception as e:

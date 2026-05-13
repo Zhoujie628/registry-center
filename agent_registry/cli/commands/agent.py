@@ -42,7 +42,7 @@ class AgentCommand(BaseCommand):
             "approval": ApprovalCommand(),
             "list": UDSListCommand(),
             "get": UDSGetCommand(),
-            "add-tags": AddTagsCommand(),
+            "set-tags": SetTagsCommand(),
         }
     
     def execute(self, args: Namespace) -> int:
@@ -232,25 +232,25 @@ class ApprovalCommand(BaseCommand):
             return 1
 
 
-class AddTagsCommand(BaseCommand):
-    """Add tags to agent via UDS"""
+class SetTagsCommand(BaseCommand):
+    """Set agent tags via UDS (full replacement)"""
 
     @property
     def name(self) -> str:
-        return "add-tags"
+        return "set-tags"
 
     @property
     def help_text(self) -> str:
-        return "Add tags to agent (tags will be appended and deduplicated)"
+        return "Set agent tags (full replacement, not append)"
 
     @property
     def display_config(self) -> Dict:
         return {
-            'table_fields': ['agent_name', 'organization', 'tags_added', 'current_tags'],
+            'table_fields': ['agent_name', 'organization', 'tags_set', 'current_tags'],
             'field_labels': {
                 'agent_name': 'Agent Name',
                 'organization': 'Organization',
-                'tags_added': 'Tags Added',
+                'tags_set': 'Tags Set',
                 'current_tags': 'Current Tags',
             }
         }
@@ -258,7 +258,7 @@ class AddTagsCommand(BaseCommand):
     def add_arguments(self, parser: ArgumentParser) -> None:
         parser.add_argument("--agent-name", "-n", required=True, help="Agent name")
         parser.add_argument("--org", "-o", required=True, help="Organization name")
-        parser.add_argument("--tags", "-t", required=True, help="Tags (comma-separated)")
+        parser.add_argument("--tags", "-t", required=True, help="Tags (comma-separated, max 10)")
         parser.add_argument("--format", "-f", choices=["text", "json", "table"], default="table")
 
     def execute(self, args: Namespace) -> int:
@@ -270,7 +270,11 @@ class AddTagsCommand(BaseCommand):
             output.error("No valid tags provided")
             return 1
 
-        result = client.add_tags(args.agent_name, args.org, tags)
+        if len(tags) > 10:
+            output.error(f"Tag limit exceeded: maximum 10 tags allowed, got {len(tags)}")
+            return 1
+
+        result = client.set_tags(args.agent_name, args.org, tags)
 
         if args.format == "json":
             output.print(result)
@@ -282,14 +286,14 @@ class AddTagsCommand(BaseCommand):
             flattened_data = {
                 'agent_name': args.agent_name,
                 'organization': args.org,
-                'tags_added': ', '.join(tags),
+                'tags_set': ', '.join(tags),
                 'current_tags': ', '.join(data.get('tag', [])) or 'None',
             }
             
-            print(self.format_output(flattened_data, title="Tags Added"))
+            print(self.format_output(flattened_data, title="Tags Set (Full Replacement)"))
             return 0
         else:
-            output.error(result.get("error", "Add tags failed"))
+            output.error(result.get("error", "Set tags failed"))
             if result.get("message"):
                 print(f"  Message: {result['message']}")
             return 1

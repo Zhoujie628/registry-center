@@ -86,7 +86,7 @@ class InitCommand:
                 registry = get_registry()
                 registered_agents = []
                 for agent in registry.find_all():
-                    if hasattr(agent, 'status') and agent.status == 'registered':
+                    if registry.get_status(agent.name, agent.provider.organization) == 'registered':
                         registered_agents.append(agent)
                 
                 if registered_agents:
