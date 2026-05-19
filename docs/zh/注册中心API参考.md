@@ -826,6 +826,107 @@ Content-Type: application/json
 }
 ```
 
+## 获取公钥信息
+
+### 典型场景
+
+运营商或设备厂商需要获取公钥信息时，可通过该接口获取。
+
+### 接口功能
+
+- 提供注册中心签名证书的公钥JWK Set格式，用于验证AgentCard的注册中心签名。
+
+### 接口约束
+
+- 接口流控：10次/秒
+- 接口认证：不需要客户端证书认证，不需要用户认证
+
+### 调用方法
+
+GET
+
+### URI
+
+/rest/v1/registry-center/keys
+
+### 请求参数
+
+- 无
+
+### 请求示例
+
+```json
+GET /rest/v1/registry-center/keys HTTP/1.1
+Host: your-domain.com
+Content-Type： application/json
+```
+
+### 响应参数
+
+| 参数名称 | 类型     | 参数值域 | 默认值 | 参数说明         | 参数示例              |
+|------|--------|------|-----|--------------|-------------------|
+| keys | array  | -    | -   | JWK Set格式的公钥列表 | 参考响应示例中的状态码200的响应 |
+
+- JWK对象的参数列表：
+
+| 参数名称   | 必选 | 类型              | 参数值域             | 默认值 | 参数说明                        | 参数示例                       |
+|:---------|:---|:----------------|:------------------|:----|:----------------------------|:---------------------------|
+| kty      | 是  | string          | RSA               | -   | 密钥类型                        | `"RSA"`                    |
+| n        | 是  | string          | base64url编码      | -   | RSA模数                        | `"base64url-encoded-modules"` |
+| e        | 是  | string          | base64url编码      | -   | RSA公钥指数                     | `"AQAB"`                   |
+| alg      | 是  | string          | RS256             | -   | 签名算法                        | `"RS256"`                  |
+| use      | 是  | string          | sig               | -   | 密钥用途                        | `"sig"`                    |
+| kid      | 是  | string          | -                 | -   | 密钥标识符                       | `"test-key-1"`             |
+| key_ops  | 否  | array of string | ["verify"]        | -   | 密钥操作用途                     | `["verify"]`               |
+
+### 响应示例
+
+- 返回状态码200：获取成功
+
+```json
+{
+  "keys": [
+    {
+      "kty": "RSA",
+      "n": "base64url-encoded-modules",
+      "e": "AQAB",
+      "alg": "RS256",
+      "use": "sig",
+      "kid": "test-key-1",
+      "key_ops": ["verify"]
+    }
+  ]
+}
+```
+
+- 返回状态码429：超过流控限制
+
+```json
+{
+  "errors": {
+    "error": [
+      {
+        "errorMessage": "Rate limit exceeded"
+      }
+    ]
+  }
+}
+```
+
+- 返回状态码500：服务内部错误
+
+```json
+{
+  "errors": {
+    "error": [
+      {
+        "errorMessage": "Internal server error"
+      }
+    ]
+  }
+}
+```
+
 ## FAQ
 
 ### HTTP Code返回429
