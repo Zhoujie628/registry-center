@@ -1,21 +1,21 @@
 ﻿# 注册中心API参考
 
-## 简介
+## 使用前必读
 
-### 特性介绍
+### 简介
 
-注册中心是一个专注于Agent统一管理的服务，支持用户将来自不同厂商的Agent进行集中注册与管理，实现多源Agent的可控接入与维护。应用于A2A-T领域多厂商多智能体交互场景下的AgentCard统一注册和管理。
+  注册中心是一个专注于Agent统一管理的服务，主要开放提供以下接口:
+  - **注册AgentCard**：支持将不同厂商的Agent注册到中心，统一纳管。
+  - **查询AgentCard列表**：根据指定条件查询符合条件的AgentCard列表。
+  - **查询指定AgentCard**：按AgentCard名称和组织精确查找唯一的AgentCard实例。
+  - **更新指定AgentCard**：更新指定AgentCard的信息。
+  - **删除指定AgentCard**：删除不再使用的AgentCard。
+  - **按语义检索AgentCard**：根据自然语言语义检索相匹配的AgentCard。
+  - **公钥管理**：提供注册中心签名公钥的获取接口。
 
-### 主要功能
+### 约束与限制
 
-- **注册AgentCard**：支持将不同厂商的Agent注册到中心，统一纳管。
-- **查询AgentCard列表**：根据指定条件查询符合条件的AgentCard列表。
-- **查询指定AgentCard**：按AgentCard名称和组织精确查找唯一的AgentCard实例。
-- **更新指定AgentCard**：更新指定AgentCard的信息。
-- **删除指定AgentCard**：删除不再使用的AgentCard。
-- **按语义检索AgentCard**：根据自然语言语义检索相匹配的AgentCard。
-- **签名验证**：验证AgentCard签名，确保来源可信。
-- **公钥管理**：提供注册中心签名公钥的获取接口。
+  具体内容请参见各接口的接口约束。
 
 ## 注册AgentCard
 
@@ -29,7 +29,7 @@
 
 - 接口约束
 
-  - 单次注册AgentCard信息报文大小不得超过1024K；
+  - 单次注册AgentCard信息报文大小不得超过1024K。
   - 单实例上该接口最大并发数为50。
 
 - 调用方法
@@ -42,69 +42,67 @@
 
 - 请求参数
 
-  - body参数列表
+  <a id="表1-body参数列表"></a>**表1** body参数列表
 
-    | 参数名称       | 是否必选 | 类型              | 值域                                          | 默认值 | 描述 |
+    | 参数名称       | 是否必选 | 类型              | 值域                                            | 默认值 | 描述 |
     |------------|------|-----------------|-----------------------------------------------|-----|------|
-    | agentCards | 是    | array_reference | 当前只支持单个AgentCard的注册， 详细请参见表：AgentCard对象的参数列表 | -   | -    |
+    | agentCards | 是    | array_reference | 当前只支持单个AgentCard的注册，详细请参见[表2](#表2-agentcard对象的参数列表)。 | -   | -    |
 
-  - AgentCard对象的参数列表
+  <a id="表2-agentcard对象的参数列表"></a>**表2** AgentCard对象的参数列表
+    
+    | 参数名称                | 是否必选 | 类型              | 值域                                                                 | 默认值 | 描述         |
+    |---------------------|------|-----------------|--------------------------------------------------------------------|-----|--------------|
+    | name                | 是    | string          | 1~100个字符。满足正则表达式`^[a-zA-Z0-9_]+(?:\s+[a-zA-Z0-9_]+)*$`。            | -   | AgentCard名称。  |
+    | description         | 是    | string          | 1~1000个字符。                                                         | -   | AgentCard描述。  |
+    | version             | 是    | string          | 1~50个字符。                                                           | -   | AgentCard版本。  |
+    | provider            | 是    | reference       | 详细请参见[表4](#表4-agentprovider对象的参数列表)。                                       | -   | 提供商信息。        |
+    | skills              | 是    | array_reference | 最大数量：100 个技能；每个技能的 JSON 序列化后最大长度：4096 字符；详细请参见[表7](#表7-agentskill对象的参数列表)。 | -   | 技能列表。         |
+    | capabilities        | 是    | reference       | 详细请参见[表5](#表5-agentcapabilities对象的参数列表)。                                   | -   | AgentCard能力项。 |
+    | supportedInterfaces | 是    | array_reference | 1~3个列表，详细请参见[表3](#表3-agentinterface对象的参数列表)。                               | -   | 支持的协议。        |
 
-    | 参数名称                | 是否必选 | 类型              | 值域                                                              | 默认值 | 描述         |
-    |---------------------|------|-----------------|-------------------------------------------------------------------|-----|--------------|
-    | name                | 是    | string          | 1~100个字符。满足正则表达式`^[a-zA-Z0-9_]+(?:\s+[a-zA-Z0-9_]+)*$`            | -   | AgentCard名称  |
-    | description         | 是    | string          | 1~1000个字符。                                                        | -   | AgentCard描述  |
-    | version             | 是    | string          | 1~50个字符。                                                          | -   | AgentCard版本  |
-    | provider            | 是    | reference       | 详细请参见表：AgentProvider对象的参数列表                                       | -   | 提供商信息        |
-    | skills              | 是    | array_reference | 最大数量：100 个技能；每个技能的 JSON 序列化后最大长度：4096 字符；详细请参见表：AgentSkill对象的参数列表 | -   | 技能列表         |
-    | capabilities        | 是    | reference       | 详细请参见表：AgentCapabilities对象的参数列表                                   | -   | AgentCard能力项 |
-    | defaultInputModes   | 否    | array of string | 最大数量：100 个                                                        | -   | 输入模式         |
-    | defaultOutputModes  | 否    | array of string | 最大数量：100 个                                                        | -   | 输入模式         |
-    | supportedInterfaces | 是    | array_reference | 1~3个列表，详细请参见表：AgentInterface对象的参数列表                               | -   | 支持的协议        |
-
-  - AgentInterface对象的参数列表
+  <a id="表3-agentinterface对象的参数列表"></a>**表3** AgentInterface对象的参数列表
 
     | 参数名称            | 是否必选 | 类型     | 值域                        | 默认值 | 描述                        |
     |:----------------|:-----|:-------|:----------------------------|:----|:----------------------------|
-    | url             | 是    | string | 1~1024个字符；必须为有效的 Web URL 格式 | -   | 接口的基础 URL 地址，用于发送 A2A 请求    |
-    | protocolBinding | 是    | string | -                           | -   | 协议绑定标识，表示该接口使用的传输协议         |
-    | protocolVersion | 是    | string | -                           | -   | A2A 协议版本号，表示该接口支持的 A2A 协议版本 |
+    | url             | 是    | string | 1~1024个字符；必须为有效的 Web URL 格式。 | -   | 接口的基础 URL 地址，用于发送 A2A 请求。    |
+    | protocolBinding | 是    | string | -                           | -   | 协议绑定标识，表示该接口使用的传输协议。         |
+    | protocolVersion | 是    | string | -                           | -   | A2A 协议版本号，表示该接口支持的 A2A 协议版本。 |
 
-  - AgentProvider对象的参数列表
+  <a id="表4-agentprovider对象的参数列表"></a>**表4** AgentProvider对象的参数列表
 
     | 参数名称         | 是否必选 | 类型     | 值域                     | 默认值 | 描述                                 |
     |:-------------|:-----|:-------|:-------------------------|:----|:-------------------------------------|
-    | organization | 是    | string | 1~100个字符；不能为空；           | -   | Agent 提供商的组织名称，用于标识 Agent 的来源组织或开发团队 |
-    | url          | 否    | string | 1~1024个字符；必须为有效的 Web URL | -   | Agent 提供商的官方网站链接，便于用户了解组织背景或获取技术支持   |
+    | organization | 是    | string | 1~100个字符；不能为空。           | -   | Agent 提供商的组织名称，用于标识 Agent 的来源组织或开发团队。 |
+    | url          | 否    | string | 1~1024个字符；必须为有效的 Web URL。 | -   | Agent 提供商的官方网站链接，便于用户了解组织背景或获取技术支持。   |
 
-  - AgentCapabilities对象的参数列表
+  <a id="表5-agentcapabilities对象的参数列表"></a>**表5** AgentCapabilities对象的参数列表
 
     | 参数名称              | 是否必选 | 类型              | 值域                                                                | 默认值   | 描述                                                                                 |
     |:------------------|:-----|:----------------|:--------------------------------------------------------------------|:------|:-------------------------------------------------------------------------------------|
-    | streaming         | 否    | boolean         | true 或 false                                                        | false | 是否支持流式传输。如果为 true，Agent 能够通过 Server-Sent Events (SSE) 实时返回响应内容；如果为 false，则仅支持一次性同步响应 |
-    | pushNotifications | 否    | boolean         | true 或 false                                                        | false | 是否支持推送通知。如果为 true，Agent 能够主动向客户端发送任务状态更新和产物通知；需要配合 PushNotificationConfig 进行配置       |
-    | extendedAgentCard | 否    | boolean         | true 或 false                                                        | false | 声明 Agent 是否支持经过认证后提供扩展版的 Agent Card                                                  |
-    | extensions        | 否    | array_reference | 最大数量：10 个扩展；每个扩展的 JSON 序列化后最大长度：512 字符；详细请参见表：AgentExtension对象的参数列表 | -     | 支持的扩展能力列表，用于声明 Agent 实现的 A2A 协议扩展特性                                                  |
+    | streaming         | 否    | boolean         | true 或 false。                                                        | false | 是否支持流式传输。如果为 true，Agent 能够通过 Server-Sent Events (SSE) 实时返回响应内容；如果为 false，则仅支持一次性同步响应。 |
+    | pushNotifications | 否    | boolean         | true 或 false。                                                        | false | 是否支持推送通知。如果为 true，Agent 能够主动向客户端发送任务状态更新和产物通知；需要配合 PushNotificationConfig 进行配置。       |
+    | extendedAgentCard | 否    | boolean         | true 或 false。                                                        | false | 声明 Agent 是否支持经过认证后提供扩展版的 Agent Card。                                                  |
+    | extensions        | 否    | array_reference | 最大数量：10 个扩展；每个扩展的 JSON 序列化后最大长度：512 字符；详细请参见[表6](#表6-agentextension对象的参数列表)。 | -     | 支持的扩展能力列表，用于声明 Agent 实现的 A2A 协议扩展特性。                                                  |
 
-  - AgentExtension对象的参数列表
+  <a id="表6-agentextension对象的参数列表"></a>**表6** AgentExtension对象的参数列表
 
     | 参数名称        | 是否必选 | 类型      | 值域         | 默认值   | 描述                                                   |
     |:------------|:-----|:--------|:-------------|:------|:-------------------------------------------------------|
-    | uri         | 是    | string  | -            | -     | 扩展的唯一标识符，必须是版本化的 URI 格式，用于全局唯一标识该扩展                    |
-    | description | 否    | string  | -            | -     | 扩展功能的人类可读说明，描述 Agent 如何使用此扩展                           |
-    | required    | 否    | boolean | true 或 false | false | 表示客户端是否必须支持此扩展。如果为 true，客户端必须理解并激活该扩展，否则 Agent 将拒绝处理请求 |
-    | params      | 否    | object  | -            | -     | 扩展的特定配置参数或发现参数，用于传递扩展初始化所需的额外信息                        |
+    | uri         | 是    | string  | -            | -     | 扩展的唯一标识符，必须是版本化的 URI 格式，用于全局唯一标识该扩展。                    |
+    | description | 否    | string  | -            | -     | 扩展功能的人类可读说明，描述 Agent 如何使用此扩展。                           |
+    | required    | 否    | boolean | true 或 false。 | false | 表示客户端是否必须支持此扩展。如果为 true，客户端必须理解并激活该扩展，否则 Agent 将拒绝处理请求。 |
+    | params      | 否    | object  | -            | -     | 扩展的特定配置参数或发现参数，用于传递扩展初始化所需的额外信息。                        |
 
-  - AgentSkill对象的参数列表
+  <a id="表7-agentskill对象的参数列表"></a>**表7** AgentSkill对象的参数列表
 
     | 参数名称        | 是否必选 | 类型              | 值域 | 默认值 | 描述                           |
     |:------------|:-----|:----------------|:-----|:----|:-------------------------------|
-    | id          | 是    | string          | -    | -   | 技能的唯一标识符，用于在 AgentCard 中区分不同技能 |
-    | name        | 是    | string          | -    | -   | 技能的人类可读名称，展示给最终用户的技能标题         |
-    | description | 是    | string          | -    | -   | 技能的详细功能说明，帮助客户理解该技能的具体作用和适用场景  |
-    | tags        | 否    | array of string | -    | -   | 用于分类和发现的关键词标签，便于客户端按类别检索和匹配技能  |
-    | inputMmodes | 否    | array of string | -    | -   | 支持的输入媒体类型列表（MIME 类型）           |
-    | outputModes | 否    | array of string | -    | -   | 支持的输出媒体类型列表（MIME 类型）           |
+    | id          | 是    | string          | -    | -   | 技能的唯一标识符，用于在 AgentCard 中区分不同技能。 |
+    | name        | 是    | string          | -    | -   | 技能的人类可读名称，展示给最终用户的技能标题。         |
+    | description | 是    | string          | -    | -   | 技能的详细功能说明，帮助客户理解该技能的具体作用和适用场景。  |
+    | tags        | 否    | array of string | -    | -   | 用于分类和发现的关键词标签，便于客户端按类别检索和匹配技能。  |
+    | inputMmodes | 否    | array of string | -    | -   | 支持的输入媒体类型列表（MIME 类型）。           |
+    | outputModes | 否    | array of string | -    | -   | 支持的输出媒体类型列表（MIME 类型）。           |
 
 - 请求示例
 
@@ -119,8 +117,8 @@
           "description": "负责RAN能效优化的自主闭环运行，包括意图探索、意图实现、效果评估与报告。",
           "version": "1.0.0",
           "provider": {
-            "organization": "Huawei",
-            "url": "https://www.huawei.com"
+            "organization": "Org",
+            "url": "https://www.org.com"
           },
           "skills": [
             {
@@ -190,39 +188,15 @@
 
 - 响应样例
 
-  - 注册成功：无响应体。
-  - 注册失败，注册数量超出上限或重复注册
-    ```json
-    {
-      "errors": {
-        "error": [
-          {
-            "errorMessage": "The agent description can contain a maximum of 1000 characters."
-          }
-        ]
-      }
-    }
-    ```
-  - 注册失败，Agent未找到
-    ```json
-    {
-      "errors": {
-        "error": [
-          {
-            "errorMessage": "Agent registration limit exceeded."
-          }
-        ]
-      }
-    }
-    ```
+    注册成功：无响应体。
 
 - 状态码
 
-  | 状态码 | 说明 |
-  |--------|------|
-  | 201 | 注册成功 |
-  | 422 | 注册失败：AgentCard参数校验失败 |
-  | 409 | 注册失败：注册数量超出上限或重复注册 |
+  | 状态码 | 说明                    |
+  |--------|-----------------------|
+  | 201 | 注册成功。                 |
+  | 422 | 注册失败，AgentCard参数校验失败。 |
+  | 409 | 注册失败，注册数量超出上限或重复注册。   |
 
 ## 查询AgentCard列表
 
@@ -232,14 +206,14 @@
 
 - 功能描述
 
-  - 根据Agent名称和组织机构进行**精确匹配查询**；
-  - 支持多条件组合查询（AND逻辑）；
+  - 根据Agent名称和组织机构进行精确匹配查询。
+  - 支持多条件组合查询（AND逻辑）。
   - 所有查询参数均为可选，不提供任何参数时返回所有已注册的Agent列表。
 
 - 接口约束
 
-  - 当不提供任何参数时，返回系统中所有已注册的Agent列表（默认注册上限为100个）；
-  - 提供参数时，按实际情况返回，最少返回0个；
+  - 当不提供任何参数时，返回系统中所有已注册的Agent列表（默认注册上限为100个）。
+  - 提供参数时，按实际情况返回，最少返回0个。
   - 单实例上该接口最大并发数为100。
 
 - 调用方法
@@ -252,9 +226,9 @@
 
 - 请求参数
 
-  - query参数列表，请求参数通过URL查询字符串传递
+  <a id="表8-query参数列表"></a>**表8** query参数列表
 
-    | 参数名          | 类型     | 必填 | 默认值 | 说明                           |
+    | 参数名          | 类型     | 必填 | 默认值 | 描述                           |
     |--------------|--------|----|-----|------------------------------|
     | name         | string | 否  | -   | Agent 名称，进行精确匹配查询。支持大小写敏感匹配。 |
     | organization | string | 否  | -   | 组织机构名称，进行精确匹配查询。支持大小写敏感匹配。   |
@@ -280,7 +254,7 @@
   - 按组织机构精确查询
 
     ```json
-    GET /rest/v1/registry-center/agent-cards?organization=Huawei HTTP/1.1
+    GET /rest/v1/registry-center/agent-cards?organization=Org HTTP/1.1
     Host: your-domain.com
     Content-Type: application/json
     ```
@@ -288,16 +262,18 @@
   - 组合条件查询（AND）
 
     ```json
-    GET /rest/v1/registry-center/agent-cards?name=RAN%20Energy%20Saving%20Agent&organization=Huawei HTTP/1.1
+    GET /rest/v1/registry-center/agent-cards?name=RAN%20Energy%20Saving%20Agent&organization=Org HTTP/1.1
     Host: your-domain.com
     Content-Type: application/json
     ```
 
 - 响应参数
 
-  | 参数名称 | 类型     | 值域 | 默认值 | 描述         |
-  |------|--------|------|-----|--------------|
-  | -    | object | {}   | -   | 符合要求的Agent列表 |
+    <a id="表9-响应参数列表"></a>**表9** 响应参数列表
+    
+    | 参数名称 | 类型              | 值域 | 默认值 | 描述         |
+    |------|-----------------|----|-----|--------------|
+    | agentCards | array_reference | -  | -   | 符合要求的Agent列表，详细请参见[表2](#表2-agentcard对象的参数列表)。 |
 
 - 响应样例
 
@@ -309,7 +285,7 @@
           "description": "负责RAN能效优化的自主闭环运行，包括意图探索、意图实现、效果评估与报告。",
           "version": "1.0.0",
           "provider": {
-            "organization": "Huawei",
+            "organization": "Org",
             "url": ""
           },
           "skills": [
@@ -376,9 +352,11 @@
 
 - 状态码
 
-  | 状态码 | 说明 |
-  |--------|------|
-  | 200 | 查询成功 |
+  | 状态码 | 说明    |
+  |--------|-------|
+  | 200 | 查询成功。 |
+  | 404 | 查询失败，Agent未找到。 |
+  | 500 | 查询失败，服务内部错误。 |
 
 ## 查询指定AgentCard
 
@@ -404,9 +382,9 @@
 
 - 请求参数
 
-  - path参数列表
+  <a id="表10-path参数列表"></a>**表10** path参数列表
 
-    | 参数名          | 类型     | 必填 | 说明                                          |
+    | 参数名          | 类型     | 必填 | 描述                                          |
     |--------------|--------|----|---------------------------------------------|
     | name         | string | 是  | Agent名称，作为路径参数传递。用于唯一标识Agent的组成部分之一。        |
     | organization | string | 是  | Agent所属的组织机构名称，作为查询参数传递。与name共同唯一标识一个Agent。 |
@@ -414,28 +392,30 @@
 - 请求示例
 
   ```json
-  GET /rest/v1/registry-center/agent-cards/Huawei/RAN%20Energy%20Saving%20Agent HTTP/1.1
+  GET /rest/v1/registry-center/agent-cards/Org/RAN%20Energy%20Saving%20Agent HTTP/1.1
   Host: your-domain.com
   Content-Type: application/json
   ```
 
 - 响应参数
 
-  | 参数名称 | 类型     | 值域   | 默认值 | 描述       |
-  |------|--------|--------|-----|------------|
-  | -    | object | object | -   | 符合要求的Agent |
+    <a id="表11-响应参数列表"></a>**表11** 响应参数列表
+    
+    | 参数名称 | 类型    | 值域 | 默认值 | 描述           |
+    |------|-------|----|-----|--------------|
+    | agentCards    | array_reference | -  | -   | 符合要求的Agent列表，详细请参见[表2](#表2-agentcard对象的参数列表)。 |
 
 - 响应样例
 
-  ```json
-  {
-    "agentCards": [
-      {
-        "name": "RAN Energy Saving Agent",
+   ```json
+   {
+     "agentCards": [
+       {
+         "name": "RAN Energy Saving Agent",
         "description": "负责RAN能效优化的自主闭环运行，包括意图探索、意图实现、效果评估与报告。",
         "version": "1.0.0",
         "provider": {
-          "organization": "Huawei",
+          "organization": "Org",
           "url": ""
         },
         "skills": [
@@ -502,9 +482,11 @@
 
 - 状态码
 
-  | 状态码 | 说明 |
-  |--------|------|
-  | 200 | 查询成功 |
+  | 状态码 | 说明             |
+  |--------|----------------|
+  | 200 | 查询成功。          |
+  | 404 | 查询失败，Agent未找到。 |
+  | 500 | 查询失败，服务内部错误。        |
 
 ## 更新指定AgentCard
 
@@ -530,9 +512,9 @@
 
 - 请求参数
 
-  - path参数列表
+  <a id="表12-path参数列表"></a>**表12** path参数列表
 
-    | 参数名          | 类型     | 必填 | 说明                                                  |
+    | 参数名          | 类型     | 必填 | 描述                                                  |
     |--------------|--------|----|-----------------------------------------------------|
     | name         | string | 是  | 待更新的Agent名称，作为路径参数传递。该值必须与请求体中的name字段匹配。            |
     | organization | string | 是  | 待更新Agent的组织机构名称。该值必须与请求体中provider.organization字段匹配。 |
@@ -540,7 +522,7 @@
 - 请求示例
 
   ```json
-  PUT /rest/v1/registry-center/agent-cards/Huawei/RAN%20Energy%20Saving%20Agent HTTP/1.1
+  PUT /rest/v1/registry-center/agent-cards/Org/RAN%20Energy%20Saving%20Agent HTTP/1.1
   Host: your-domain.com
   Content-Type: application/json
   {
@@ -550,7 +532,7 @@
         "description": "负责RAN能效优化的自主闭环运行，包括意图探索、意图实现、效果评估与报告。",
         "version": "1.0.0",
         "provider": {
-          "organization": "Huawei",
+          "organization": "Org",
           "url": ""
         },
         "skills": [
@@ -616,43 +598,20 @@
   ```
 
 - 响应参数
+
     无。
 
 - 响应样例
 
-  - 修改成功：无响应体。
-  - 修改失败，AgentCard参数校验失败
-    ```json
-    {
-      "errors": {
-        "error": [
-          {
-            "errorMessage": "The agent description can contain a maximum of 1000 characters."
-          }
-        ]
-      }
-    }
-    ```
-  - 修改失败，Agent未找到
-    ```json
-    {
-      "errors": {
-        "error": [
-          {
-            "errorMessage": "Agent not found."
-          }
-        ]
-      }
-    }
-    ```
+    修改成功：无响应体。
 
 - 状态码
 
-    | 状态码 | 说明 |
-    |--------|------|
-    | 200 | 修改成功 |
-    | 422 | 修改失败：AgentCard参数校验失败 |
-    | 404 | Agent未找到 |
+    | 状态码 | 说明                    |
+    |--------|-----------------------|
+    | 200 | 修改成功。                 |
+    | 422 | 修改失败，AgentCard参数校验失败。 |
+    | 404 | 修改失败，Agent未找到。        |
 
 ## 删除指定AgentCard
 
@@ -678,9 +637,9 @@
 
 - 请求参数
 
-  - path参数列表
+  <a id="表13-path参数列表"></a>**表13** path参数列表
 
-    | 参数名          | 类型     | 必填 | 说明                                           |
+    | 参数名          | 类型     | 必填 | 描述                                           |
     |--------------|--------|----|----------------------------------------------|
     | name         | string | 是  | 待注销的Agent名称，作为路径参数传递。用于唯一标识要删除的Agent。        |
     | organization | string | 是  | 待注销Agent的组织机构名称，作为查询参数传递。与name共同唯一标识一个Agent。 |
@@ -688,36 +647,25 @@
 - 请求示例
 
   ```json
-  DELETE /rest/v1/registry-center/agent-cards/Huawei/RAN%20Energy%20Saving%20Agent HTTP/1.1
+  DELETE /rest/v1/registry-center/agent-cards/Org/RAN%20Energy%20Saving%20Agent HTTP/1.1
   Host: your-domain.com
   Content-Type: application/json
   ```
 
 - 响应参数
+
     无。
 
 - 响应样例
 
-  - 删除成功，无响应体。
-  - 删除失败，Agent未找到。
-    ```json
-     {
-       "errors": {
-         "error": [
-           {
-             "errorMessage": "Agent not found."
-           }
-         ]
-       }
-     }
-    ```
+    删除成功，无响应体。
 
-  - 状态码
+- 状态码
 
-    | 状态码 | 说明 |
-    |--------|------|
-    | 200 | 删除成功 |
-    | 404 | Agent未找到 |
+  | 状态码 | 说明             |
+  |--------|----------------|
+  | 200 | 删除成功。          |
+  | 404 | 删除失败，Agent未找到。 |
 
 ## 按语义检索AgentCard
 
@@ -743,9 +691,9 @@
 
 - 请求参数
 
-  - body参数列表
+  <a id="表14-body参数列表"></a>**表14** body参数列表
 
-    | 参数名  | 类型     | 必填 | 默认值 | 说明                                     |
+    | 参数名  | 类型     | 必填 | 默认值 | 描述                                     |
     |------|--------|----|-----|----------------------------------------|
     | task | string | 是  | -   | 自然语言任务描述，用于语义检索相关Agent。例如："需要查询意图报告"等。 |
 
@@ -764,13 +712,15 @@
 
 - 响应参数
 
-  | 参数名称 | 类型     | 值域 | 默认值 | 描述         |
-  |------|--------|------|-----|--------------|
-  | -    | object | {}   | -   | 符合要求的Agent列表 |
+    <a id="表15-响应参数列表"></a>**表15** 响应参数列表
+    
+    | 参数名称 | 类型    | 值域 | 默认值 | 描述         |
+    |------|-------|---|-----|--------------|
+    | agentCards    | array_reference | - | -   | 符合要求的Agent列表，详细请参见[表2](#表2-agentcard对象的参数列表)。 |
 
 - 响应样例
 
-  - 查询成功
+   - 查询成功
       ```json
       {
         "agentCards": [
@@ -779,7 +729,7 @@
             "description": "负责RAN能效优化的自主闭环运行，包括意图探索、意图实现、效果评估与报告。",
             "version": "1.0.0",
             "provider": {
-              "organization": "Huawei",
+              "organization": "Org",
               "url": ""
             },
             "skills": [
@@ -846,9 +796,11 @@
 
 - 状态码
 
-  | 状态码 | 说明 |
-  |--------|------|
-  | 200 | 查询成功 |
+  | 状态码 | 说明             |
+  |--------|----------------|
+  | 200 | 查询成功。          |
+  | 404 | 查询失败，Agent未找到。 |
+  | 500 | 查询失败，服务内部错误。   |
 
 ## 获取公钥信息
 
@@ -862,8 +814,8 @@
 
 - 接口约束
 
-  - 接口流控：10次/秒；
-  - 接口认证：不需~~要客户端证书认证，不需要用户认证。
+  - 接口流控：10次/秒。
+  - 接口认证：不需要客户端证书认证，不需要用户认证。
 
 - 调用方法
 
@@ -887,27 +839,25 @@
 
 - 响应参数
 
-  - JWK对象数组
+  <a id="表16-jwk对象数组"></a>**表16** JWK对象数组
 
     | 参数名称 | 类型     | 值域 | 默认值 | 描述         |
     |------|--------|------|-----|--------------|
-    | keys | array  | -    | -   | JWK Set格式的公钥列表 |
+    | keys | array_reference  | -    | -   | JWK Set格式的公钥列表。 |
 
-  - JWK对象
+  <a id="表17-jwk对象"></a>**表17** JWK对象
 
     | 参数名称   | 是否必选 | 类型              | 值域             | 默认值 | 描述                        |
     |:---------|:-----|:----------------|:------------------|:----|:----------------------------|
-    | kty      | 是    | string          | RSA               | -   | 密钥类型                        |
-    | n        | 是    | string          | base64url编码      | -   | RSA模数                        |
-    | e        | 是    | string          | base64url编码      | -   | RSA公钥指数                     |
-    | alg      | 是    | string          | RS256             | -   | 签名算法                        |
-    | use      | 是    | string          | sig               | -   | 密钥用途                        |
-    | kid      | 是    | string          | -                 | -   | 密钥标识符                       |
-    | key_ops  | 否    | array of string | ["verify"]        | -   | 密钥操作用途                     |
+    | kty      | 是    | string          | RSA               | -   | 密钥类型。                        |
+    | n        | 是    | string          | base64url编码      | -   | RSA模数。                        |
+    | e        | 是    | string          | base64url编码      | -   | RSA公钥指数。                     |
+    | alg      | 是    | string          | RS256             | -   | 签名算法。                        |
+    | use      | 是    | string          | sig               | -   | 密钥用途。                        |
+    | kid      | 是    | string          | -                 | -   | 密钥标识符。                       |
+    | key_ops  | 否    | array of string | ["verify"]        | -   | 密钥操作用途。                     |
 
 - 响应样例
-
-  - 获取成功。
 
     ```json
     {
@@ -925,88 +875,10 @@
     }
     ```
 
-  - 获取失败，超过流控限制。
-
-    ```json
-    {
-      "errors": {
-        "error": [
-          {
-            "errorMessage": "Rate limit exceeded"
-          }
-        ]
-      }
-    }
-    ```
-    
-    - 获取失败，服务内部错误。
-
-    ```json
-    {
-      "errors": {
-        "error": [
-          {
-            "errorMessage":  "Internal server error"
-          }
-        ]
-      }
-    }
-    ```
-
 - 状态码
 
-  | 状态码 | 说明 |
-  |--------|------|
-  | 200 | 获取成功 |
-  | 429 | 超过流控限制 |
-  | 500 | 服务内部错误 |
-
-## FAQ
-
-### HTTP Code返回429
-
-**错误原因：** 客户端在短时间内发送了过多请求，超过了接口的访问频率限制。
-
-```json
-{
-  "errors": {
-    "error": [
-      {
-        "errorMessage":  "Rate limit exceeded"
-      }
-    ]
-  }
-}
-```
-
-### HTTP Code返回500
-
-**错误原因：** 服务器内部发生未预期的异常错误，导致无法正常处理当前请求
-
-```json
-{
-  "errors": {
-    "error": [
-      {
-        "errorMessage":  "Internal server error"
-      }
-    ]
-  }
-}
-```
-
-### HTTP Code返回503
-
-**错误原因：** 服务器当前处于过载状态，并发请求数量超过服务器的处理能力上限
-
-```json
-{
-  "errors": {
-    "error": [
-      {
-        "errorMessage":  "Server is busy"
-      }
-    ]
-  }
-}
-```
+  | 状态码 | 说明           |
+  |--------|--------------|
+  | 200 | 获取成功。        |
+  | 429 | 获取失败，超过流控限制。 |
+  | 500 | 获取失败，服务内部错误。 |
