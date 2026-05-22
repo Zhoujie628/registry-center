@@ -27,10 +27,10 @@ class TestInitCommand(unittest.TestCase):
             f.write(config_content)
         init_cmd = InitCommand()
         init_cmd.config_file = self.config_file
-        init_cmd.existing_config = init_cmd._load_existing_config()
+        init_cmd.existing_config = init_cmd._parse_config_file(init_cmd.config_file)
         return init_cmd
 
-    def test_load_existing_config(self):
+    def test_parse_config_file(self):
         with open(self.config_file, 'w', encoding='utf-8') as f:
             f.write("enable_https=true\n")
             f.write("ssl_certfile=/path/to/cert.cer\n")
@@ -39,7 +39,7 @@ class TestInitCommand(unittest.TestCase):
             f.write("  spaced_key = spaced_value  \n")
 
         init_cmd = self._create_init_command()
-        config = init_cmd._load_existing_config()
+        config = init_cmd._parse_config_file(init_cmd.config_file)
 
         self.assertEqual(config['enable_https'], 'true')
         self.assertEqual(config['ssl_certfile'], '/path/to/cert.cer')
@@ -47,19 +47,19 @@ class TestInitCommand(unittest.TestCase):
         self.assertEqual(config['spaced_key'], 'spaced_value')
         self.assertNotIn('# comment line', config)
 
-    def test_load_existing_config_empty_file(self):
+    def test_parse_config_file_empty_file(self):
         with open(self.config_file, 'w', encoding='utf-8') as f:
             f.write("")
 
         init_cmd = self._create_init_command()
-        config = init_cmd._load_existing_config()
+        config = init_cmd._parse_config_file(init_cmd.config_file)
 
         self.assertEqual(config, {})
 
-    def test_load_existing_config_no_file(self):
+    def test_parse_config_file_no_file(self):
         init_cmd = self._create_init_command()
         init_cmd.config_file = "/nonexistent/path/server.conf"
-        config = init_cmd._load_existing_config()
+        config = init_cmd._parse_config_file(init_cmd.config_file)
 
         self.assertEqual(config, {})
 
@@ -72,7 +72,7 @@ class TestInitCommand(unittest.TestCase):
             'ssl_keyfile_password': '/path/to/key_pwd',
             'ssl_ca_certs': '/path/to/ca.cer',
             'ssl_cert_certs': '',
-            'ssl_verify_client': 'true',
+            'verify_client': 'true',
             'sign_certfile': '/path/to/sign.cer',
             'sign_keyfile': '/path/to/sign_key.pem',
             'sign_keyfile_password': '/path/to/sign_key_pwd',
@@ -103,7 +103,7 @@ class TestInitCommand(unittest.TestCase):
             f.write("ssl_keyfile_password=/old/key_pwd\n")
             f.write("ssl_ca_certs=/old/ca.cer\n")
             f.write("ssl_cert_certs=\n")
-            f.write("ssl_verify_client=false\n")
+            f.write("verify_client=false\n")
             f.write("sign_certfile=/old/sign.cer\n")
             f.write("sign_keyfile=/old/sign_key.pem\n")
             f.write("sign_keyfile_password=/old/sign_key_pwd\n")
@@ -117,7 +117,7 @@ class TestInitCommand(unittest.TestCase):
             'ssl_keyfile_password': '/new/key_pwd',
             'ssl_ca_certs': '/new/ca.cer',
             'ssl_cert_certs': '',
-            'ssl_verify_client': 'true',
+            'verify_client': 'true',
             'sign_certfile': '/new/sign.cer',
             'sign_keyfile': '/new/sign_key.pem',
             'sign_keyfile_password': '/new/sign_key_pwd',
@@ -133,14 +133,14 @@ class TestInitCommand(unittest.TestCase):
         self.assertIn('enable_https=true', content)
         self.assertIn('ssl_certfile=/new/cert.cer', content)
         self.assertIn('ssl_keyfile=/new/key.pem', content)
-        self.assertIn('ssl_verify_client=true', content)
+        self.assertIn('verify_client=true', content)
         self.assertIn('sign_certfile=/new/sign.cer', content)
         self.assertIn('registry.sign.enabled=true', content)
         self.assertIn('signature_validation_enabled=true', content)
 
         self.assertNotIn('enable_https=false', content)
         self.assertNotIn('/old/cert.cer', content)
-        self.assertNotIn('ssl_verify_client=false', content)
+        self.assertNotIn('verify_client=false', content)
 
     def test_save_config_to_file_preserve_other_config(self):
         init_cmd = self._create_init_command()
@@ -160,7 +160,7 @@ class TestInitCommand(unittest.TestCase):
             'ssl_keyfile': '/new/key.pem',
             'ssl_keyfile_password': '/new/key_pwd',
             'ssl_ca_certs': '/new/ca.cer',
-            'ssl_verify_client': 'true',
+            'verify_client': 'true',
             'sign_certfile': '/new/sign.cer',
             'sign_keyfile': '/new/sign_key.pem',
             'sign_keyfile_password': '/new/sign_key_pwd',
@@ -184,7 +184,7 @@ class TestInitCommand(unittest.TestCase):
             f.write("enable_https=true\n")
             f.write("ssl_certfile=/old/cert.cer\n")
             f.write("ssl_keyfile=/old/key.pem\n")
-            f.write("ssl_verify_client=true\n")
+            f.write("verify_client=true\n")
             f.write("sign_certfile=/old/sign.cer\n")
             f.write("sign_keyfile=/old/sign_key.pem\n")
             f.write("registry.sign.enabled=true\n")
@@ -239,7 +239,7 @@ class TestInitCommand(unittest.TestCase):
             'ssl_keyfile': '/path/to/key.pem',
             'ssl_keyfile_password': '/path/to/key_pwd',
             'ssl_ca_certs': '/path/to/ca.cer',
-            'ssl_verify_client': 'true',
+            'verify_client': 'true',
             'registry.sign.enabled': 'false',
             'signature_validation_enabled': 'true'
         }
@@ -320,7 +320,7 @@ class TestInitCommand(unittest.TestCase):
                         'ssl_keyfile_password': '/key_pwd',
                         'ssl_ca_certs': '/ca.cer',
                         'ssl_cert_certs': '',
-                        'ssl_verify_client': 'true'
+                        'verify_client': 'true'
                     }
                     init_cmd.init_command()
                     mock_tls.assert_called_once()

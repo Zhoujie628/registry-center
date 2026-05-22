@@ -819,7 +819,7 @@ def _make_agent_key(name: str, organization: str) -> Tuple[str, str]:
 
 
 # ---------- JWK Endpoint ----------
-jwk_provider = JWKProvider(cert_path=config.get("JWK_CERT_PATH", "cert.pem"))
+jwk_provider = JWKProvider(cert_path=config.get("jwk_cert_path", "cert.pem"))
 
 jwk_rate_item = parse_rate_limit('jwk')
 

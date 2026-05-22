@@ -208,27 +208,27 @@ class InitCommand:
     def config_jwk_cert(self) -> dict:
         config = {}
 
-        default_jwk_cert_path = self.existing_config.get('JWK_CERT_PATH', '')
-        config['JWK_CERT_PATH'] = self.input_path(
-            "Enter JWK certificate path JWK_CERT_PATH",
+        default_jwk_cert_path = self.existing_config.get('jwk_cert_path', '')
+        config['jwk_cert_path'] = self.input_path(
+            "Enter JWK certificate path jwk_cert_path",
             default_jwk_cert_path,
             ".cer"
         )
 
-        default_jwk_private_key_path = self.existing_config.get('JWK_PRIVATE_KEY_PATH', '')
+        default_jwk_private_key_path = self.existing_config.get('jwk_private_key_path', '')
         jwk_private_key_path, keyfile_changed = self.input_path(
-            "Enter JWK private key path JWK_PRIVATE_KEY_PATH",
+            "Enter JWK private key path jwk_private_key_path",
             default_jwk_private_key_path,
             ".pem",
             track_change=True
         )
-        config['JWK_PRIVATE_KEY_PATH'] = jwk_private_key_path
+        config['jwk_private_key_path'] = jwk_private_key_path
 
         if keyfile_changed:
             password = self.input_password("Enter JWK private key password")
-            config['JWK_PRIVATE_KEY_PASSWORD'] = self.save_password_file(password, jwk_private_key_path)
+            config['jwk_private_key_password'] = self.save_password_file(password, jwk_private_key_path)
         else:
-            config['JWK_PRIVATE_KEY_PASSWORD'] = self.existing_config.get('JWK_PRIVATE_KEY_PASSWORD', '')
+            config['jwk_private_key_password'] = self.existing_config.get('jwk_private_key_password', '')
 
         return config
 
