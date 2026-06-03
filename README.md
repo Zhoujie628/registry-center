@@ -175,7 +175,7 @@ flowchart TB
 | `POST` | `/rest/v1/registry-center/agent-cards/semantic-query` | Semantic search by task description |
 | `GET` | `/rest/v1/registry-center/keys` | Retrieve registry signing public keys (JWK Set) |
 
-See the [API Reference](docs/zh/注册中心API参考.md) for full request/response schemas, error codes, and constraints.
+See the [API Reference](docs/en/Registry%20Center%20API%20Reference.md) for full request/response schemas, error codes, and constraints.
 
 ## Configuration
 
@@ -196,12 +196,11 @@ python -m agent_registry.init
 
 | Document | Language | Description |
 |----------|----------|-------------|
-| [User Guide](docs/zh/注册中心用户指南.md) | 中文 | Features, deployment, CLI quick reference, FAQ |
-| [Development Guide](docs/zh/注册中心开发指南.md) | 中文 | Architecture, registration workflow, custom LLM/handler extensions |
-| [API Reference](docs/zh/注册中心API参考.md) | 中文 | Full REST API specification with request/response examples |
-| [Security Guide](docs/zh/注册中心安全能力指南.md) | 中文 | TLS, access control, audit logging, content safety, certificate tooling |
-| [LLM Config](common/config/README_en.md) | EN | LLM configuration file reference |
-| [LLM Config](common/config/README_zh.md) | 中文 | LLM 配置文件说明 |
+| [User Guide](docs/en/Registry%20Center%20User%20Guide.md) | Features, deployment, CLI quick reference, FAQ |
+| [Development Guide](docs/en/Registry%20Center%20Development%20Guide.md) | Architecture, registration workflow, custom LLM/handler extensions |
+| [API Reference](docs/en/Registry%20Center%20API%20Reference.md) | Full REST API specification with request/response examples |
+| [Security Guide](docs/en/Registry%20Center%20Security%20Guide.md) | TLS, access control, audit logging, content safety, certificate tooling |
+| [LLM Config](common/config/README_en.md) | LLM configuration file reference |
 
 ## Deployment
 
