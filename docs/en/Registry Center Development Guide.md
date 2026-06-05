@@ -659,7 +659,34 @@ The system adopts the registry pattern, with core components shown in Table 2:
 
 **Figure 1** Handler Invocation Flow
 
-<img src="./images/custom_interface.png" width="600" alt="Handler Invocation Flow" />
+```mermaid
+flowchart TD
+    subgraph Registration Flow
+        R1[HandlerRegistry.register<br>interface_type, handler_class] --> R2[Store to registry dictionary]
+    end
+
+    subgraph Lookup Flow
+        G1[HandlerRegistry.get_handler<br>interface_type] --> G2{Look up registry}
+        G2 -->|Found| G3[Return custom handler instance]
+        G2 -->|Not found| G4[Return default handler instance]
+    end
+
+    subgraph Class Inheritance Structure
+        direction TB
+        B[BaseHandler abstract base class<br>defines abstract handle method]
+        C[Custom handler<br>inherits BaseHandler]
+        B -.->|Subclass must implement| C
+        C --> I[Implement async def handle<br>*args, **kwargs]
+    end
+
+    subgraph User Layer
+        U[User-defined custom handler]
+    end
+
+    U --> C
+    G3 -.-> C
+    G4 -.-> B
+```
 
 **Custom LLM Architecture:**
 
