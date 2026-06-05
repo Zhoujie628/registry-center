@@ -15,6 +15,8 @@
 #    License for the specific language governing permissions and limitations
 #    under the License.
 
+set -euo pipefail
+
 # Stop service by process name
 # Usage: ./stop.sh
 
@@ -29,7 +31,7 @@ PROCESS_NAME="agent_registry.start"
 echo "Stopping service..."
 
 # Find process
-PIDS=$(pgrep -f "$PROCESS_NAME" 2>/dev/null)
+PIDS=$(pgrep -f "$PROCESS_NAME" 2>/dev/null || true)
 
 if [ -z "$PIDS" ]; then
     echo -e "${YELLOW}No running service found${NC}"
@@ -40,25 +42,28 @@ echo "Found process PID: $PIDS"
 
 # Stop process
 for PID in $PIDS; do
-    kill $PID 2>/dev/null
+    kill -TERM "$PID" 2>/dev/null || true
 done
 
 sleep 2
 
 # Check and force stop remaining processes
-PIDS=$(pgrep -f "$PROCESS_NAME" 2>/dev/null)
-if [ -n "$PIDS" ]; then
+REMAINING=$(pgrep -f "$PROCESS_NAME" 2>/dev/null || true)
+if [ -n "$REMAINING" ]; then
     echo -e "${YELLOW}Process not responding, force stopping...${NC}"
-    for PID in $PIDS; do
-        kill -9 $PID 2>/dev/null
+    for PID in $REMAINING; do
+        kill -9 "$PID" 2>/dev/null || true
     done
     sleep 1
 fi
 
-# Check if stopped
-if ps -p $PID > /dev/null 2>&1; then
-    echo -e "${YELLOW}Process not responding, force stopping...${NC}"
-    kill -9 $PID 2>/dev/null
+# Final check: re-fetch PIDs to ensure all processes are stopped
+FINAL_CHECK=$(pgrep -f "$PROCESS_NAME" 2>/dev/null || true)
+if [ -n "$FINAL_CHECK" ]; then
+    echo -e "${RED}Warning: Some processes still running: $FINAL_CHECK${NC}"
+    for PID in $FINAL_CHECK; do
+        kill -9 "$PID" 2>/dev/null || true
+    done
     sleep 1
 fi
 

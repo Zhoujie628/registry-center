@@ -217,7 +217,7 @@ class RateLimiter:
         identifier = request.client.host
         # Check rate limit; if exceeded, raise 429.
         if not await async_hit(self.rate_item, identifier):
-            raise  CustomHTTPException(status.HTTP_429_TOO_MANY_REQUESTS,"Too Many Requests")
+            raise CustomHTTPException(status.HTTP_429_TOO_MANY_REQUESTS, "Too Many Requests")
         return True
 
 
@@ -231,25 +231,34 @@ app = FastAPI(
     openapi_url=None
 )
 
+def _get_int_config(config: dict, key: str, default: int) -> int:
+    """Safely parse integer config values, falling back to default on error."""
+    try:
+        return int(config.get(key, default))
+    except (ValueError, TypeError):
+        logger.warning(f"Invalid integer value for '{key}', using default {default}")
+        return default
+
+
 config = get_conf()
 
 app.add_middleware(
     ConnectionLimitMiddleware,
-    max_connections=int(config.get(CONN_MAX, 11))
+    max_connections=_get_int_config(config, CONN_MAX, 500)
 )
 
 app.add_middleware(
     TimeoutMiddleware,
-    timeout_seconds=int(config.get(CONN_TIMEOUT, 30))
+    timeout_seconds=_get_int_config(config, CONN_TIMEOUT, 300)
 )
 
-register_semaphore = anyio.Semaphore(int(config.get(FLOW_CTL_PARALLEL_REGISTER, 50)))
-query_semaphore = anyio.Semaphore(int(config.get(FLOW_CTL_PARALLEL_QUERY, 100)))
-update_semaphore = anyio.Semaphore(int(config.get(FLOW_CTL_PARALLEL_UPDATE, 100)))
-get_semaphore = anyio.Semaphore(int(config.get(FLOW_CTL_PARALLEL_GET, 100)))
-retrieve_semaphore = anyio.Semaphore(int(config.get(FLOW_CTL_PARALLEL_RETRIEVE, 100)))
-deregister_semaphore = anyio.Semaphore(int(config.get(FLOW_CTL_PARALLEL_DEREGISTER, 50)))
-jwk_semaphore = anyio.Semaphore(int(config.get(FLOW_CTL_PARALLEL_JWK, 1)))
+register_semaphore = anyio.Semaphore(_get_int_config(config, FLOW_CTL_PARALLEL_REGISTER, 50))
+query_semaphore = anyio.Semaphore(_get_int_config(config, FLOW_CTL_PARALLEL_QUERY, 100))
+update_semaphore = anyio.Semaphore(_get_int_config(config, FLOW_CTL_PARALLEL_UPDATE, 100))
+get_semaphore = anyio.Semaphore(_get_int_config(config, FLOW_CTL_PARALLEL_GET, 100))
+retrieve_semaphore = anyio.Semaphore(_get_int_config(config, FLOW_CTL_PARALLEL_RETRIEVE, 100))
+deregister_semaphore = anyio.Semaphore(_get_int_config(config, FLOW_CTL_PARALLEL_DEREGISTER, 50))
+jwk_semaphore = anyio.Semaphore(_get_int_config(config, FLOW_CTL_PARALLEL_JWK, 1))
 
 class CustomHTTPException(HTTPException):
     def __init__(self, status_code: int, error_message: str):
@@ -287,7 +296,7 @@ async def security_middleware(request: Request, call_next):
             status_code=status.HTTP_414_URI_TOO_LONG,
         )
     # Body size check for write methods
-    if request.method in ("POST", "PUT"):
+    if request.method in ("POST", "PUT", "PATCH"):
         total_size = 0
         body_chunks = []
 
@@ -330,14 +339,7 @@ async def _audit_result(op_name: OperationName, success: bool, details: dict, cl
 
 async def _audit_failure(op_name: OperationName, details: dict, client_ip: str):
     """Log audit entry for operation failure."""
-    await audit_handle.handle({
-        "operation_name": op_name,
-        "level": LogLevel.MINOR,
-        "result": OperationResult.FAILURE,
-        "object_name": OperatorObject.AGENT,
-        "details": details,
-        "client_ip": client_ip
-    })
+    await _audit_result(op_name, False, details, client_ip)
 
 
 def _get_owner_from_request(request: Request) -> Optional[str]:
@@ -424,17 +426,10 @@ async def _verify_owner_permission(
 
 async def _check_agent_limit(registry: RegistryCore, client_ip: str, details: dict) -> None:
     """Check if registration count exceeds the limit, log and raise an exception if so."""
-    if registry.count() >= int(config.get(AGENT_NUM_MAX, 40)):
+    if registry.count() >= _get_int_config(config, AGENT_NUM_MAX, 100):
         details["message"] = "Agent registration limit exceeded."
-        await audit_handle.handle({
-            "operation_name": OperationName.REGISTER_AGENT,
-            "level": LogLevel.MINOR,
-            "result": OperationResult.FAILURE,
-            "object_name": OperatorObject.AGENT,
-            "details": details,
-            "client_ip": client_ip
-        })
-        raise CustomHTTPException(status.HTTP_409_CONFLICT,"Agent registration limit exceeded.",)
+        await _audit_failure(OperationName.REGISTER_AGENT, details, client_ip)
+        raise CustomHTTPException(status.HTTP_409_CONFLICT, "Agent registration limit exceeded.")
 
 
 async def _check_duplicate_agent(agent: AgentCard, registry: RegistryCore, client_ip: str,
@@ -443,17 +438,9 @@ async def _check_duplicate_agent(agent: AgentCard, registry: RegistryCore, clien
     key = make_agent_key(agent.name, agent.provider.organization)
     if key in registry.get_agents():
         details["message"] = "Registration skipped: duplicate agent."
-        await audit_handle.handle({
-            "operation_name": OperationName.REGISTER_AGENT,
-            "level": LogLevel.MINOR,
-            "result": OperationResult.FAILURE,
-            "object_name": OperatorObject.AGENT,
-            "details": details,
-            "client_ip": client_ip
-        })
+        await _audit_failure(OperationName.REGISTER_AGENT, details, client_ip)
         raise CustomHTTPException(status.HTTP_409_CONFLICT,
-                                  f"Registration skipped: duplicate agent ({agent.name}, {agent.provider.organization})",
-                                  )
+                                  f"Registration skipped: duplicate agent ({agent.name}, {agent.provider.organization})")
 
 
 async def _perform_registration(
@@ -470,24 +457,10 @@ async def _perform_registration(
         return success
     except ValueError as e:
         details["message"] = str(e)
-        await audit_handle.handle({
-            "operation_name": OperationName.REGISTER_AGENT,
-            "level": LogLevel.MINOR,
-            "result": OperationResult.FAILURE,
-            "object_name": OperatorObject.AGENT,
-            "details": details,
-            "client_ip": client_ip
-        })
+        await _audit_failure(OperationName.REGISTER_AGENT, details, client_ip)
         raise CustomHTTPException(status.HTTP_400_BAD_REQUEST, str(e)) from e
     except Exception as e:
-        await audit_handle.handle({
-            "operation_name": OperationName.REGISTER_AGENT,
-            "level": LogLevel.MINOR,
-            "result": OperationResult.FAILURE,
-            "object_name": OperatorObject.AGENT,
-            "details": details,
-            "client_ip": client_ip
-        })
+        await _audit_failure(OperationName.REGISTER_AGENT, details, client_ip)
         logger.error(f"Unexpected error in register: {e}")
         raise CustomHTTPException(status.HTTP_500_INTERNAL_SERVER_ERROR,"Internal server error") from e
 
@@ -504,35 +477,14 @@ async def _perform_update(
     try:
         update_handle = HandlerRegistry.get_handler(InterfaceType.UPDATE)
         success = await update_handle.handle(name, organization, data, owner=owner)
-        await audit_handle.handle({
-            "operation_name": OperationName.UPDATE_AGENT,
-            "level": LogLevel.MINOR,
-            "result": OperationResult.SUCCESS,
-            "object_name": OperatorObject.AGENT,
-            "details": data,
-            "client_ip": client_ip
-        })
+        await _audit_result(OperationName.UPDATE_AGENT, True, data, client_ip)
         return success
     except ValueError as e:
         details["message"] = str(e)
-        await audit_handle.handle({
-            "operation_name": OperationName.UPDATE_AGENT,
-            "level": LogLevel.MINOR,
-            "result": OperationResult.FAILURE,
-            "object_name": OperatorObject.AGENT,
-            "details": details,
-            "client_ip": client_ip
-        })
+        await _audit_failure(OperationName.UPDATE_AGENT, details, client_ip)
         raise CustomHTTPException(status.HTTP_400_BAD_REQUEST, str(e)) from e
     except Exception as e:
-        await audit_handle.handle({
-            "operation_name": OperationName.UPDATE_AGENT,
-            "level": LogLevel.MINOR,
-            "result": OperationResult.FAILURE,
-            "object_name": OperatorObject.AGENT,
-            "details": details,
-            "client_ip": client_ip
-        })
+        await _audit_failure(OperationName.UPDATE_AGENT, details, client_ip)
         logger.error(f"Unexpected error in update: {e}")
         raise CustomHTTPException(status.HTTP_500_INTERNAL_SERVER_ERROR,"Internal server error") from e
 
@@ -556,6 +508,8 @@ async def register_agent(
     """
     body = await request.json()
     agent_cards = body.get("agentCards", [])
+    if not agent_cards:
+        raise CustomHTTPException(status.HTTP_422_UNPROCESSABLE_CONTENT, "agentCards must be a non-empty list")
     client_ip = request.client.host
 
     owner = _get_owner_from_request(request) if OWNER_ISOLATION_ENABLED else None

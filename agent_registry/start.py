@@ -13,9 +13,9 @@
 #    License for the specific language governing permissions and limitations
 #    under the License.
 
-# agent_registry/start.py
 import asyncio
 import os
+import signal
 import ssl
 import sys
 import threading
@@ -27,6 +27,7 @@ from uvicorn import config
 from agent_registry.config import CONN_TIMEOUT, TLS_CIPHER, FORWARDED_ALLOW_IPS, IS_WINDOWS
 from agent_registry.cipher_converter import CipherConverter
 from agent_registry.internal.registry_center_internal_service import RegistryCenterInternalService
+from agent_registry.internal.tcp_internal_service import TCPInternalService
 from agent_registry.server import app
 from common.cert.cert_validater import CertValidator
 from common.custom.custom_handle import HandlerRegistry
@@ -43,7 +44,6 @@ _internal_thread = None
 
 
 def get_user_info_from_env():
-    """Get user information from environment variables"""
     user_info = {
         'username': os.environ.get('APP_USER', 'unknown'),
         'uid': os.environ.get('APP_UID', 'unknown'),
@@ -87,25 +87,20 @@ def customized_create_ssl_context(
         if ca_certs:
             ctx.load_verify_locations(ca_certs)
             if len(conf_singleton_obj.get_crl_list()) > 0:
-                # If CRL is configured, append CRL
                 ctx.load_verify_locations(conf_singleton_obj.ssl_crl_file)
-                # Enable CRL verification mode
                 ctx.verify_flags |= ssl.VERIFY_CRL_CHECK_LEAF
         if ciphers:
             ctx.set_ciphers(ciphers)
         return ctx
-    except BaseException as e:
+    except Exception as e:
         logger.error(f"customized_create_ssl_context error {e}")
-        raise e
+        raise
 
 
-# Extend CRL support since the original config does not support loading CRLs
 config.create_ssl_context = customized_create_ssl_context
 
 
 class CustomUvicornServer:
-    """Customized Uvicorn server, which is used to add additional security configurations."""
-
     def __init__(self, server_config, conf_obj):
         self.server_config = server_config
         self.conf_obj = conf_obj
@@ -117,13 +112,9 @@ class CustomUvicornServer:
             host=self.server_config.get("ip", "127.0.0.1"),
             port=int(self.server_config.get("port", 5000)),
             ssl_certfile=self.conf_obj.ssl_certfile,
-            # Private key path
             ssl_keyfile=self.conf_obj.ssl_keyfile,
-            # Private key password
             ssl_keyfile_password=load_cert_password(self.conf_obj.ssl_keyfile_password).decode(DEFAULT_ENCODING),
-            # Trusted CA certificates
             ssl_ca_certs=self.conf_obj.ssl_ca_certs,
-            # Whether to verify client certificates (enabling this prevents browser access without client certs)
             ssl_cert_reqs=self.conf_obj.verify_client,
             ssl_ciphers=CipherConverter.convert(self.server_config.get(TLS_CIPHER)),
             timeout_keep_alive=0,
@@ -135,28 +126,31 @@ class CustomUvicornServer:
         server.run()
 
 
-def start_internal_service():
-    global _internal_service, _internal_thread
-    
+def _create_internal_service(server_config):
     if IS_WINDOWS:
-        logger.error("Registry center startup failed: Windows environment is not supported. Please run in a Linux environment.")
-        return
-    
-    try:
-        _internal_service = RegistryCenterInternalService()
-        _internal_thread = threading.Thread(target=_internal_service.start, daemon=True)
-        _internal_thread.start()
+        logger.warning(
+            "Running on Windows: UDS is not supported. "
+            "Internal service will use TCP on 127.0.0.1:1108 instead."
+        )
+        return TCPInternalService()
+    else:
+        return RegistryCenterInternalService()
+
+
+def start_internal_service(server_config):
+    global _internal_service, _internal_thread
+    _internal_service = _create_internal_service(server_config)
+    _internal_thread = threading.Thread(target=_internal_service.start, daemon=True)
+    _internal_thread.start()
+
+    if IS_WINDOWS:
+        logger.info("Internal service started on TCP: 127.0.0.1:1108")
+    else:
         logger.info("Internal service started on UDS socket: run/registry-center/internal.sock")
-    except Exception as e:
-        logger.error(f"Failed to start internal service: {e}")
 
 
 def stop_internal_service():
     global _internal_service
-    
-    if IS_WINDOWS:
-        return
-    
     if _internal_service:
         try:
             _internal_service.stop()
@@ -165,18 +159,33 @@ def stop_internal_service():
             logger.error(f"Failed to stop internal service: {e}")
 
 
+def _handle_shutdown_signal(signum, frame):
+    logger.info(f"Received signal {signum}, shutting down...")
+    stop_internal_service()
+    sys.exit(0)
+
+
 def main():
     if IS_WINDOWS:
-        logger.error("Registry center startup failed: Windows environment is not supported. Please run in a Linux environment.")
-        sys.exit("Registry center startup failed: Windows environment is not supported. Please run in a Linux environment.")
-    
+        logger.warning(
+            "Registry Center is running on Windows. "
+            "Windows support is provided for development and debugging purposes. "
+            "For production deployment, please use a Linux environment."
+        )
+
     server_config = get_conf()
 
-    start_internal_service()
+    start_internal_service(server_config)
 
     is_https = server_config.get("enable_https", True)
     is_enable_https = str(is_https).lower() == 'true'
+
     if not is_enable_https:
+        try:
+            signal.signal(signal.SIGINT, _handle_shutdown_signal)
+            signal.signal(signal.SIGTERM, _handle_shutdown_signal)
+        except Exception:
+            pass
         uvicorn.run(app, host=server_config.get('ip', "127.0.0.1"), port=int(server_config.get('port', 5000)))
     else:
         try:
@@ -186,19 +195,32 @@ def main():
                 stop_internal_service()
                 sys.exit(result.message)
             set_ssl_folder_permissions()
+            try:
+                signal.signal(signal.SIGINT, _handle_shutdown_signal)
+                signal.signal(signal.SIGTERM, _handle_shutdown_signal)
+            except Exception:
+                pass
             server = CustomUvicornServer(server_config, conf_obj)
             server.run()
+        except KeyboardInterrupt:
+            logger.info("KeyboardInterrupt received, shutting down...")
+            stop_internal_service()
         except Exception as e:
             logger.error(f"agent_registry server start failed {e}")
             stop_internal_service()
-            asyncio.run(audit_handle.handle({
-                "object_name": OperatorObject.SERVICE,
-                "operation_name": OperationName.START_SERVICE,
-                "level": LogLevel.DANGER,
-                "result": OperationResult.FAILURE,
-                "details": {"ip": server_config.get("ip", ""), "port": server_config.get("port", "")},
-                "user_name": get_user_info_from_env().get('username')
-            }))
+            try:
+                asyncio.run(audit_handle.handle({
+                    "object_name": OperatorObject.SERVICE,
+                    "operation_name": OperationName.START_SERVICE,
+                    "level": LogLevel.DANGER,
+                    "result": OperationResult.FAILURE,
+                    "details": {"ip": server_config.get("ip", ""), "port": server_config.get("port", "")},
+                    "user_name": get_user_info_from_env().get('username')
+                }))
+            except RuntimeError:
+                logger.warning("Failed to log audit during shutdown: event loop not available")
+            except Exception:
+                pass
             sys.exit(f"agent_registry server start failed: {e}")
 
 

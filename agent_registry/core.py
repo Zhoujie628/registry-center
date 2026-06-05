@@ -21,7 +21,7 @@ from threading import Lock
 from typing import List, Dict, Tuple, Optional, Any
 
 from a2a.types import AgentCard
-from google.protobuf.json_format import MessageToDict
+from google.protobuf.json_format import MessageToDict, Parse
 from loguru import logger
 
 from agent_registry.model.tag import Tag
@@ -166,7 +166,7 @@ class RegistryCore:
             result = {}
             for agent in agents:
                 key = make_agent_key(agent.name, agent.provider.organization)
-                result[key] = agent
+                result[key] = True
             return result
 
     def update(self, name: str, organization: str, agent_data: Dict[str, Any],
@@ -240,13 +240,6 @@ class RegistryCore:
             agents_info = self._build_agents_info(retrieve_results)
             selected_names = self._select_agents_by_llm(task, agents_info, top_n)
             result = [agent for agent in retrieve_results if agent["name"] in selected_names]
-        elif self.persistence_mode == 'postgresql':
-            agents = self.storage.find_all()
-            if not agents:
-                return []
-            agents_info = self._build_agents_info(agents)
-            selected_names = self._select_agents_by_llm(task, agents_info, top_n)
-            result = [agent for agent in agents if agent.name in selected_names]
         else:
             agents = self.storage.find_all()
             if not agents:
@@ -264,7 +257,9 @@ class RegistryCore:
             query_data = {"collection_name": COLLECTION_NAME, "key": "id", "value": self._make_id(name, organization)}
             result = self.vectordb.query_by_key(query_data)
             if len(result) > 0:
-                return result[0]
+                agent_data = result[0]
+                agent_card_json = agent_data.get("agent_card", "{}")
+                return Parse(agent_card_json, AgentCard())
             else:
                 return None
         else:
@@ -280,8 +275,9 @@ class RegistryCore:
             if len(result) > 0:
                 agent_data = result[0]
                 stored_owner = agent_data.get("owner")
+                agent_card_json = agent_data.get("agent_card", "{}")
                 return AgentRecord(
-                    agent_card=AgentCard(**agent_data),
+                    agent_card=Parse(agent_card_json, AgentCard()),
                     owner=stored_owner
                 )
             else:
@@ -294,7 +290,11 @@ class RegistryCore:
         if use_vectordb:
             query_data = {"collection_name": COLLECTION_NAME, "key": "owner", "value": owner}
             results = self.vectordb.query_by_key(query_data)
-            return [AgentRecord(agent_card=AgentCard(**r), owner=r.get("owner")) for r in results]
+            records = []
+            for r in results:
+                agent_card_json = r.get("agent_card", "{}")
+                records.append(AgentRecord(agent_card=Parse(agent_card_json, AgentCard()), owner=r.get("owner")))
+            return records
         else:
             return self.storage.find_by_owner(owner)
 

@@ -15,6 +15,8 @@
 #    License for the specific language governing permissions and limitations
 #    under the License.
 
+set -euo pipefail
+
 RED='\033[0;31m'
 GREEN='\033[0;32m'
 YELLOW='\033[1;33m'
@@ -28,7 +30,7 @@ TARGET_DIR="${SCRIPT_DIR}/../agent_registry"
 
 if [ -d "$ROOT_DIR" ]; then
     ROOT_DIR="$(cd "$ROOT_DIR" && pwd)"
-    cd $ROOT_DIR
+    cd "$ROOT_DIR"
     echo "Current working directory: $(pwd)"
 else
   echo "The project root path does not exist."
@@ -85,7 +87,7 @@ fi
 
 # Start the Python script
 echo "Starting Python script: $PYTHON_SCRIPT"
-python -m agent_registry.start
+python3 -m agent_registry.start
 
 EXIT_CODE=$?
 echo "$EXIT_CODE"

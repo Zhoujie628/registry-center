@@ -871,28 +871,6 @@ class SubcommandResolver:
             bool
         """
         return name in parent.subcommands
-        name = instance.name
-        
-        if name in self._commands:
-            raise ValueError(f"Command '{name}' already registered")
-        
-        self._commands[name] = command_class
-    
-    def get(self, name: str) -> Optional[Type[BaseCommand]]:
-        """获取命令类"""
-        return self._commands.get(name)
-    
-    def get_all(self) -> Dict[str, Type[BaseCommand]]:
-        """获取所有一级命令"""
-        return self._commands.copy()
-    
-    def has(self, name: str) -> bool:
-        """检查命令是否存在"""
-        return name in self._commands
-    
-    def clear(self) -> None:
-        """清空注册表（用于测试）"""
-        self._commands.clear()
 ```
 
 ### 5.4 Exceptions

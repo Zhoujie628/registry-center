@@ -22,7 +22,6 @@ from typing import Dict, Type, Optional
 from loguru import logger
 from pydantic import ValidationError
 
-from agent_registry.config import IS_WINDOWS
 from agent_registry.internal.handlers import BaseUDSHandler
 from agent_registry.internal.handlers.approval_handler import ApprovalHandler
 from agent_registry.internal.handlers.get_agent_handler import GetAgentHandler
@@ -72,10 +71,6 @@ class RegistryCenterInternalService:
         self._running = False
 
     def start(self):
-        if IS_WINDOWS:
-            logger.error("Registry center startup failed: Windows environment is not supported. Please run in a Linux environment.")
-            return
-        
         self._ensure_socket_dir()
         try:
             os.unlink(self.socket_path)

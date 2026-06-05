@@ -14,5 +14,6 @@
 #    under the License.
 
 from agent_registry.internal.registry_center_internal_service import RegistryCenterInternalService, RequestDispatcher
+from agent_registry.internal.tcp_internal_service import TCPInternalService
 
-__all__ = ['RegistryCenterInternalService', 'RequestDispatcher']
+__all__ = ['RegistryCenterInternalService', 'RequestDispatcher', 'TCPInternalService']
