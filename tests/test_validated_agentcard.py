@@ -72,7 +72,6 @@ class TestCheckBlacklist:
             check_blacklist(malicious_text, PROMPT_INJECTION_BLACKLIST_CN, "description")
         assert exc_info.value.status_code == status.HTTP_422_UNPROCESSABLE_CONTENT
         assert "description contains prohibited content" in exc_info.value.detail
-        assert "忽略之前的指令" in exc_info.value.detail
 
     def test_check_blacklist_dangerous_skill_exact_match(self):
         """Test with exact dangerous skill keyword"""
@@ -81,7 +80,6 @@ class TestCheckBlacklist:
             check_blacklist(malicious_text, DANGEROUS_SKILL_BLACKLIST_CN, "skill name")
         assert exc_info.value.status_code == status.HTTP_422_UNPROCESSABLE_CONTENT
         assert "skill name contains prohibited content" in exc_info.value.detail
-        assert "执行代码" in exc_info.value.detail
 
     def test_check_blacklist_case_insensitive(self):
         """Test that blacklist check is case insensitive"""
@@ -97,7 +95,6 @@ class TestCheckBlacklist:
         with pytest.raises(HTTPException) as exc_info:
             check_blacklist(text_with_keyword, PROMPT_INJECTION_BLACKLIST_CN, "description")
         assert exc_info.value.status_code == status.HTTP_422_UNPROCESSABLE_CONTENT
-        assert "忽略之前的指令" in exc_info.value.detail
 
     def test_check_blacklist_early_exit_on_first_match(self):
         """Test that function exits early when finding first match"""

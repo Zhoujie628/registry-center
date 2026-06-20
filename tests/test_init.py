@@ -310,7 +310,7 @@ class TestInitCommand(unittest.TestCase):
     def test_init_command_https_disabled_skips_tls(self):
         init_cmd = self._create_init_command_with_config("enable_https=false\n")
 
-        mock_inputs = ['n', 'y', 'y']
+        mock_inputs = ['', '', 'n', 'y', 'y']
         with patch('builtins.input', side_effect=mock_inputs):
             with patch.object(init_cmd, 'config_tls_cert') as mock_tls:
                 with patch.object(init_cmd, 'config_sign_cert') as mock_sign:
@@ -326,7 +326,7 @@ class TestInitCommand(unittest.TestCase):
     def test_init_command_registry_sign_disabled_skips_sign(self):
         init_cmd = self._create_init_command_with_config("enable_https=true\n")
 
-        mock_inputs = ['y', 'n', 'y']
+        mock_inputs = ['', '', 'y', 'n', 'y']
         with patch('builtins.input', side_effect=mock_inputs):
             with patch.object(init_cmd, 'config_tls_cert') as mock_tls:
                 with patch.object(init_cmd, 'config_sign_cert') as mock_sign:

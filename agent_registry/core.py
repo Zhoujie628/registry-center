@@ -18,6 +18,7 @@
 # agent_registry/core.py
 import json
 import os
+import re
 from pathlib import Path
 from threading import Lock
 from typing import List, Dict, Tuple, Optional, Any
@@ -142,8 +143,15 @@ class RegistryCore:
                               "value": self._make_id(name, organization)}
             elif name is not None:
                 query_data = {"collection_name": COLLECTION_NAME, "key": "name", "value": name}
-            else:
+            elif organization is not None:
                 query_data = {"collection_name": COLLECTION_NAME, "key": "organization", "value": organization}
+            else:
+                entities = self.vectordb.get_all_entities({"collection_name": COLLECTION_NAME})
+                result = []
+                for agent_dict in entities:
+                    agent_card_json = agent_dict.get("agent_card", "{}")
+                    result.append(Parse(agent_card_json, AgentCard()))
+                return result
             return self.vectordb.query_by_key(query_data)
         else:
             if name and organization:
@@ -214,17 +222,49 @@ class RegistryCore:
                 return result
 
     def _select_agents_by_llm(self, task: str, agents_info: List[dict], top_n: int) -> list:
-        """Use LLM to select the most relevant agent names from a list of agent info dicts."""
+        """Use LLM to select the most relevant agents, returning list of (org, name) tuples."""
         try:
             prompt = build_agent_selection_prompt(task, json.dumps(agents_info, ensure_ascii=False, indent=2),
                                                   top_n=top_n)
-            _, selected_name_str = self.llm.ask_llm(prompt)
-            trans_table = str.maketrans("", "", "\"[]")
-            selected_names = [n.strip().translate(trans_table) for n in selected_name_str.split(",") if n.strip()]
-            return selected_names
+            _, selected_str = self.llm.ask_llm(prompt)
+            selected = self._parse_llm_json_response(selected_str)
+            return [(item.get("organization", ""), item["name"]) for item in selected
+                    if isinstance(item, dict) and "name" in item]
         except Exception as e:
             logger.error(f"LLM error during agent selection: {e}")
             return []
+
+    def _parse_llm_json_response(self, text: str) -> list:
+        text = text.strip()
+        if not text:
+            return []
+        m = re.search(r'```(?:json)?\s*(\[.*?\])\s*```', text, re.DOTALL)
+        if m:
+            return json.loads(m.group(1))
+        start = text.find('[')
+        end = text.rfind(']')
+        if start != -1 and end != -1 and end > start:
+            return json.loads(text[start:end + 1])
+        return json.loads(text)
+
+    def _build_agents_info(self, agents: List) -> List[dict]:
+        result = []
+        for agent in agents:
+            if isinstance(agent, dict):
+                result.append({
+                    "name": agent.get("name", ""),
+                    "description": agent.get("description", ""),
+                    "organization": agent.get("organization", ""),
+                })
+            else:
+                skills_list = [s.name for s in agent.skills] if agent.skills else []
+                result.append({
+                    "name": agent.name,
+                    "description": agent.description,
+                    "organization": agent.provider.organization,
+                    "skills": skills_list,
+                })
+        return result
 
     def retrieve_by_task(self, task: str, top_n: int, use_vectordb: bool = USE_VECTORDB) -> List[AgentCard]:
         """
@@ -240,15 +280,17 @@ class RegistryCore:
                                "top_n": top_n}
             retrieve_results = self.vectordb.retrieve_entity(retrieve_entity)
             agents_info = self._build_agents_info(retrieve_results)
-            selected_names = self._select_agents_by_llm(task, agents_info, top_n)
-            result = [agent for agent in retrieve_results if agent["name"] in selected_names]
+            selected_pairs = self._select_agents_by_llm(task, agents_info, top_n)
+            result = [agent for agent in retrieve_results
+                      if (agent.get("organization", ""), agent["name"]) in selected_pairs]
         else:
             agents = self.storage.find_all()
             if not agents:
                 return []
             agents_info = self._build_agents_info(agents)
-            selected_names = self._select_agents_by_llm(task, agents_info, top_n)
-            result = [agent for agent in agents if agent.name in selected_names]
+            selected_pairs = self._select_agents_by_llm(task, agents_info, top_n)
+            result = [agent for agent in agents
+                      if (agent.provider.organization, agent.name) in selected_pairs]
 
         logger.info(f"LLM selected {len(result)} agents for task: {task}")
         return result
@@ -343,6 +385,8 @@ class RegistryCore:
 
     def update_status(self, name: str, organization: str, new_status: str) -> bool:
         """Update agent status."""
+        if new_status not in ('registered', 'published'):
+            raise ValueError(f"Invalid status '{new_status}'. Must be 'registered' or 'published'.")
         with self._lock:
             if not self.storage:
                 return False

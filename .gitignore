@@ -4,4 +4,11 @@ __pycache__/
 venv/
 .venv
 log/
+data/
 DEPLOY_ALIYUN_zh.md
+.env
+*.pem
+*.cer
+*.key
+etc/ssl/
+etc/sign_cert/

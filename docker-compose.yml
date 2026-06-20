@@ -20,6 +20,12 @@ services:
       - REGISTRY_AGENT_APPROVAL_ENABLED=false
       - REGISTRY_SIGNATURE_VALIDATION_ENABLED=false
       - REGISTRY_FORWARDED_ALLOW_IPS=*
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:5000/rest/v1/registry-center/agent-cards"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 40s
     restart: unless-stopped
 
   # ---- Optional: PostgreSQL for production persistence ----

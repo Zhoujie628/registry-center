@@ -7,6 +7,7 @@ from loguru import logger
 
 from agent_registry.internal.handlers.base_handler import BaseUDSHandler
 from agent_registry.internal.protocols.response import InternalResponse
+from agent_registry.internal.utils.tag_validator import TagValidator
 from common.custom.custom_handle import HandlerRegistry
 from common.custom.interface_type import InterfaceType
 from common.log.audit_logger import LogLevel, OperationName, OperationResult, OperatorObject
@@ -58,7 +59,9 @@ class SetTagsHandler(BaseUDSHandler):
                 message="tags must be a list"
             ).model_dump()
         
-        if len(tags) > 10:
+        tag_validator = TagValidator()
+        valid, error = tag_validator.validate_tags(tags)
+        if not valid:
             details["tag_count"] = len(tags)
             asyncio.run(audit_handle.handle({
                 "operation_name": OperationName.UPDATE_TAGS,
@@ -69,11 +72,11 @@ class SetTagsHandler(BaseUDSHandler):
                 "client_ip": "internal",
                 "user_name": user_name
             }))
-            logger.warning(f"Tag limit exceeded: {agent_name} ({organization}) - attempted: {len(tags)}")
+            logger.warning(f"Tag validation failed: {agent_name} ({organization}) - {error}")
             return InternalResponse(
                 success=False,
-                error="Tag limit exceeded",
-                message=f"Agent cannot have more than 10 tags. Attempted to set: {len(tags)}"
+                error="Tag validation failed",
+                message=error
             ).model_dump()
         
         # Validate tags existence in tag library

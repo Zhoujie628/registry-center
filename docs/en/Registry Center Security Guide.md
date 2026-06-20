@@ -380,3 +380,4 @@ The certificate key algorithm is RSA, with a key length of 3072, a certificate v
 | Database Attack (2 items) | database injection, SQL injection |
 | Data Theft (11 items) | steal keys, steal secret keys<br>steal passwords, steal credentials<br>illegally obtain keys, illegally obtain passwords<br>illegally obtain credentials<br>steal data, data exfiltration<br>data leak, steal privacy<br>steal private data, illegally obtain privacy |
 | Network Attack (6 items) | network attack, network penetration<br>network intrusion, port scan<br>vulnerability scan, attack scan |
+| Command Execution (7 items) | execute code, execute command<br>run command, execute shell<br>remote execution, code execution, command execution |

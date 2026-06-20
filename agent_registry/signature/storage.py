@@ -43,9 +43,12 @@ class StoragePath:
             str: Storage file path.
         """
         if organization:
-            # With organization: etc/sign_verify/jwks/{organization}/{agent_name}.json
             org_dir = os.path.join(StoragePath.BASE_DIR, organization)
-            return os.path.join(org_dir, f"{agent_name}.json")
+            full_path = os.path.join(org_dir, f"{agent_name}.json")
+            resolved = os.path.realpath(full_path)
+            if not resolved.startswith(os.path.realpath(StoragePath.BASE_DIR)):
+                raise ValueError(f"Path traversal detected: {full_path}")
+            return resolved
         else:
             # Without organization: etc/sign_verify/jwks/{hash of name + url}.json
             if not provider_url:
@@ -53,7 +56,11 @@ class StoragePath:
 
             hash_key = f"{agent_name}{provider_url}"
             hash_value = hashlib.sha256(hash_key.encode('utf-8')).hexdigest()
-            return os.path.join(StoragePath.BASE_DIR, f"{hash_value}.json")
+            full_path = os.path.join(StoragePath.BASE_DIR, f"{hash_value}.json")
+            resolved = os.path.realpath(full_path)
+            if not resolved.startswith(os.path.realpath(StoragePath.BASE_DIR)):
+                raise ValueError(f"Path traversal detected: {full_path}")
+            return resolved
 
     @staticmethod
     def get_organization_dir(organization: str) -> str:
@@ -66,7 +73,11 @@ class StoragePath:
         Returns:
             str: Organization directory path.
         """
-        return os.path.join(StoragePath.BASE_DIR, organization)
+        full_path = os.path.join(StoragePath.BASE_DIR, organization)
+        resolved = os.path.realpath(full_path)
+        if not resolved.startswith(os.path.realpath(StoragePath.BASE_DIR)):
+            raise ValueError(f"Path traversal detected: {full_path}")
+        return resolved
 
     @staticmethod
     def ensure_directory_exists(file_path: str) -> None:

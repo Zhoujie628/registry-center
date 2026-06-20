@@ -188,7 +188,11 @@ def main():
             signal.signal(signal.SIGTERM, _handle_shutdown_signal)
         except Exception:
             pass
-        uvicorn.run(app, host=server_config.get('ip', "127.0.0.1"), port=int(server_config.get('port', 5000)))
+        try:
+            uvicorn.run(app, host=server_config.get('ip', "127.0.0.1"), port=int(server_config.get('port', 5000)))
+        except KeyboardInterrupt:
+            logger.info("KeyboardInterrupt received, shutting down...")
+            stop_internal_service()
     else:
         try:
             conf_obj = conf_singleton_obj

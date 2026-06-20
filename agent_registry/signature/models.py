@@ -29,7 +29,14 @@ class ProtectedHeader(BaseModel):
     alg: str = Field(..., description="Signature algorithm, e.g., ES256, RS256")
     typ: str = Field(default="JOSE", description="Type identifier")
     kid: str = Field(..., description="Key ID")
-    jku: str = Field(..., description="JWK Set URL")
+    jku: Optional[str] = Field(None, description="JWK Set URL")
+
+    @field_validator('alg')
+    @classmethod
+    def validate_alg(cls, v):
+        if v not in ['ES256', 'RS256']:
+            raise ValueError('Signature algorithm only supports ES256 or RS256')
+        return v
 
 
 class JWK(BaseModel):

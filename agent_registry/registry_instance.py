@@ -16,7 +16,10 @@
 #    under the License.
 
 # ---------- Dependency: Registry Core (Singleton) ----------
+import threading
+
 _registry_instance = None
+_registry_lock = threading.Lock()
 
 
 def get_registry():
@@ -26,12 +29,13 @@ def get_registry():
     from agent_registry.core import RegistryCore
     from agent_registry.config import PERSISTENCE_FILE, PERSISTENCE_CONF, PERSISTENCE_MODE
     global _registry_instance
-    if _registry_instance is None:
-        _registry_instance = RegistryCore(
-            persistence_file=PERSISTENCE_FILE,
-            persistence_mode=PERSISTENCE_MODE,
-            persistence_conf=PERSISTENCE_CONF
-        )
+    with _registry_lock:
+        if _registry_instance is None:
+            _registry_instance = RegistryCore(
+                persistence_file=PERSISTENCE_FILE,
+                persistence_mode=PERSISTENCE_MODE,
+                persistence_conf=PERSISTENCE_CONF
+            )
     return _registry_instance
 
 

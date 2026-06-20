@@ -114,7 +114,7 @@ def parse_crl_list(cert_path: str) -> x509.CertificateRevocationList:
             raise CertParseException(f'Parse crl file error! "-----BEGIN" not found! Unsupported der binary type! ')
         # Attempt to parse PEM format CRL
         crl_list = x509.load_pem_x509_crl(cert_data)
-        if len(crl_list) == 0:
+        if crl_list is None:
             raise CertParseException(f"Parse crl file error! No crl found! ")
         return crl_list
     except Exception as e:

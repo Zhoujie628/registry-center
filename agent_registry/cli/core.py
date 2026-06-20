@@ -386,7 +386,9 @@ class InteractiveCLI(cmd.Cmd):
         
         try:
             args = parser.parse_args(argv)
-        except SystemExit:
+        except SystemExit as e:
+            if e.code == 0:
+                return 0
             return 1
         
         if not hasattr(args, '_command') or args._command is None:

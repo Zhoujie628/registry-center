@@ -185,7 +185,7 @@ flowchart TB
 |----------|------|
 | `etc/conf/server.conf` | 服务 IP、端口、TLS 证书、签名验证、审核开关、所有者隔离 |
 | `etc/conf/server.properties` | TLS 协议版本、密码套件、连接/超时/流控参数 |
-| `etc/conf/persistence.conf` | 存储后端：`file`（默认）、`postgresql`、`sqlite` |
+| `etc/conf/persistence.conf` | 存储后端：`file`（默认）、`postgresql` |
 | `etc/conf/log_config.conf` | 审计日志轮转参数（文件大小、备份数量） |
 | `common/config/llm_config.json` | 语义检索的 LLM 模型端点（兼容 OpenAI 格式或 AOC 平台） |
 

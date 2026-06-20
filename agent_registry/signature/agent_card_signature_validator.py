@@ -16,6 +16,7 @@
 #    under the License.
 import json
 import base64
+import asyncio
 from typing import Optional, List, Dict, Any
 from loguru import logger
 
@@ -121,7 +122,9 @@ class AgentCardSignatureValidator:
                         logger.warning(f"Unexpected backend signature validation error: {e}")
 
             logger.info("Trying jku key signature.")
-            jku_key_fetcher = lambda key_id, jku: self.jwk_fetcher.fetch_jku_key(key_id, jku)
+            jku_key_fetcher = lambda key_id, jku: asyncio.run(
+                self.jwk_fetcher.fetch_jku_key(key_id, jku)
+            )
             verifier = create_signature_verifier(jku_key_fetcher, ['ES256', 'RS256'])
             try:
                 verifier(agent_card)
