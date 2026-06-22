@@ -59,6 +59,9 @@
     | skills              | 是    | array_reference | 最大数量：100 个技能；每个技能的 JSON 序列化后最大长度：4096 字符；详细请参见[表7](#表7-agentskill对象的参数列表)。 | -   | 技能列表。         |
     | capabilities        | 是    | reference       | 详细请参见[表5](#表5-agentcapabilities对象的参数列表)。                                   | -   | AgentCard能力项。 |
     | supportedInterfaces | 是    | array_reference | 1~3个列表，详细请参见[表3](#表3-agentinterface对象的参数列表)。                               | -   | 支持的协议。        |
+| signatures          | 否    | array            | 签名列表，用于AgentCard完整性校验。                                             | -   | 数字签名。          |
+| defaultInputModes   | 否    | array of string  | 支持的默认输入媒体类型列表（MIME 类型）。                                           | -   | 默认输入模式。         |
+| defaultOutputModes  | 否    | array of string  | 支持的默认输出媒体类型列表（MIME 类型）。                                           | -   | 默认输出模式。         |
 
   <a id="表3-agentinterface对象的参数列表"></a>**表3** AgentInterface对象的参数列表
 
@@ -118,7 +121,7 @@
           "version": "1.0.0",
           "provider": {
             "organization": "Org",
-            "url": "https://www.org.com"
+            "url": "https://example.com"
           },
           "skills": [
             {
@@ -209,7 +212,7 @@
 
 - 功能描述
 
-  - 根据Agent名称和组织机构进行精确匹配查询。
+  - 根据Agent名称进行模糊匹配（子串）查询，根据组织机构进行精确匹配查询。
   - 支持多条件组合查询（AND逻辑）。
   - 所有查询参数均为可选，不提供任何参数时返回所有已注册的Agent列表。
 
@@ -233,7 +236,7 @@
 
     | 参数名          | 类型     | 必填 | 默认值 | 描述                           |
     |--------------|--------|----|-----|------------------------------|
-    | name         | string | 否  | -   | Agent 名称，进行精确匹配查询。支持大小写敏感匹配。 |
+    | name         | string | 否  | -   | Agent 名称，进行模糊匹配（子串）查询。不区分大小写。 |
     | organization | string | 否  | -   | 组织机构名称，进行精确匹配查询。支持大小写敏感匹配。   |
 
 - 请求示例
@@ -390,8 +393,8 @@
 
     | 参数名          | 类型     | 必填 | 描述                                          |
     |--------------|--------|----|---------------------------------------------|
-    | name         | string | 是  | Agent名称，作为路径参数传递。用于唯一标识Agent的组成部分之一。        |
-    | organization | string | 是  | Agent所属的组织机构名称，作为查询参数传递。与name共同唯一标识一个Agent。 |
+| organization | string | 是  | Agent所属的组织机构名称，作为路径参数传递。与name共同唯一标识一个Agent。 |
+| name         | string | 是  | Agent名称，作为路径参数传递。用于指定要查询的Agent。        |
 
 - 请求示例
 
@@ -651,7 +654,7 @@
     | 参数名          | 类型     | 必填 | 描述                                           |
     |--------------|--------|----|----------------------------------------------|
     | name         | string | 是  | 待注销的Agent名称，作为路径参数传递。用于唯一标识要删除的Agent。        |
-    | organization | string | 是  | 待注销Agent的组织机构名称，作为查询参数传递。与name共同唯一标识一个Agent。 |
+    | organization | string | 是  | 待注销Agent的组织机构名称，作为路径参数传递。与name共同唯一标识一个Agent。 |
 
 - 请求示例
 

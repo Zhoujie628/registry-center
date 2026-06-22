@@ -26,7 +26,7 @@ Applied to unified AgentCard registration and management in multi-vendor, multi-
 
 ## Installation and Deployment
 
-See: [Software Installation Guide (Quick Start)](https://gitcode.com/OpenAN/docs/blob/main/en/quick_start.md#2-software-installation-guide)
+See: [Software Installation Guide (Quick Start)](https://github.com/project-openan/docs/blob/main/en/quick_start.md#2-software-installation-guide)
 
 ## Management Capabilities (CLI)
 

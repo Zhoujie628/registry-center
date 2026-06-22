@@ -96,7 +96,7 @@ class FileStorage(StorageBackend):
     def find_by_name(self, name: str) -> List[AgentCard]:
         result = []
         for key, agent in self._agents.items():
-            if name and agent.name == name:
+            if name and name.lower() in agent.name.lower():
                 result.append(agent)
         return result
 
@@ -156,6 +156,10 @@ class FileStorage(StorageBackend):
         key = (name.strip(), organization.strip())
         if key not in self._agents:
             logger.info(f"Deregister failed: agent not found ({name},{organization})")
+            return False
+
+        if owner is not None and self._owner_map.get(key) != owner:
+            logger.info(f"Deregister failed: owner mismatch ({name},{organization})")
             return False
 
         del self._agents[key]

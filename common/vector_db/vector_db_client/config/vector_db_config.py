@@ -16,6 +16,7 @@
 #    under the License.
 
 from enum import Enum
+from typing import Dict
 
 from common.llm.config.config_reader import read_config_as_json
 
@@ -41,7 +42,7 @@ class VectorDBConfig:
         self.uri = config['uri']
         self.version = config['version']
 
-def get_vectordb_config() -> {str, VectorDBConfig}:
+def get_vectordb_config() -> Dict[str, VectorDBConfig]:
     config: dict[str,dict] = read_config_as_json("../../config/vectordb_config.json")
     vectordb_config_item = {}
     for key, value_list in config.items():

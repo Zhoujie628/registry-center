@@ -1,5 +1,6 @@
 import os
 import sys
+import getpass
 from pathlib import Path
 
 from cryptography import x509
@@ -35,6 +36,14 @@ class InitCommand:
     def init_command(self):
         config = {}
 
+        default_ip = self.existing_config.get('ip', '127.0.0.1')
+        ip_input = input(f"Enter server IP (default: {default_ip}): ").strip()
+        config['ip'] = ip_input or default_ip
+
+        default_port = self.existing_config.get('port', '5000')
+        port_input = input(f"Enter server port (default: {default_port}): ").strip()
+        config['port'] = port_input or default_port
+
         default_enable_https = self.existing_config.get('enable_https', 'true')
         enable_https_input = input(f"Enable HTTPS (y/n, default: {default_enable_https}): ").strip()
         if enable_https_input.lower() == 'n':
@@ -51,10 +60,10 @@ class InitCommand:
 
         default_sign_enabled = self.existing_config.get('registry.sign.enabled', 'true')
         sign_enabled_input = input(
-            f"Enable registry signing registry.sign.enabled (y/n, default: {default_sign_enabled}): ").strip()
-        if sign_enabled_input.lower() == 'n':
+            f"Enable registry signing registry.sign.enabled (y/n, default: {default_sign_enabled}): ").strip().lower()
+        if sign_enabled_input == 'n':
             config['registry.sign.enabled'] = 'false'
-        elif sign_enabled_input.lower() == 'y':
+        elif sign_enabled_input == 'y':
             config['registry.sign.enabled'] = 'true'
         else:
             config['registry.sign.enabled'] = default_sign_enabled
@@ -66,11 +75,11 @@ class InitCommand:
 
         default_signature = self.existing_config.get('signature_validation_enabled', 'true')
         signature_validation_input = input(
-            f"Enable signature validation (y/n, default: {default_signature}): ").strip()
-        if signature_validation_input.lower() == 'n':
+            f"Enable signature validation (y/n, default: {default_signature}): ").strip().lower()
+        if signature_validation_input == 'n':
             config['signature_validation_enabled'] = 'false'
             print("Signature validation disabled")
-        elif signature_validation_input.lower() == 'y':
+        elif signature_validation_input == 'y':
             config['signature_validation_enabled'] = 'true'
             print("Signature validation enabled")
         else:
@@ -168,10 +177,10 @@ class InitCommand:
             config['ssl_keyfile_password'] = self.existing_config.get('ssl_keyfile_password', '')
 
         default_verify_client = self.existing_config.get('ssl_verify_client', 'true')
-        verify_client = input(f"Enable client certificate verification verify_client (y/n, default: {default_verify_client}): ").strip()
-        if verify_client.lower() == 'n':
+        verify_client = input(f"Enable client certificate verification verify_client (y/n, default: {default_verify_client}): ").strip().lower()
+        if verify_client == 'n':
             config['ssl_verify_client'] = 'false'
-        elif verify_client.lower() == 'y':
+        elif verify_client == 'y':
             config['ssl_verify_client'] = 'true'
         else:
             config['ssl_verify_client'] = default_verify_client
@@ -400,7 +409,7 @@ class InitCommand:
             username_input = input(f"Enter database user postgresql.username (default: {default_username}): ").strip()
             config['postgresql.username'] = username_input or default_username
 
-            password_input = input(f"Enter database password postgresql.password: ").strip()
+            password_input = getpass.getpass(f"Enter database password postgresql.password: ").strip()
             if password_input:
                 config['postgresql.password'] = encrypt(password_input)
             else:
@@ -433,13 +442,34 @@ class InitCommand:
         config_dir = os.path.dirname(self.persistence_config_file)
         os.makedirs(config_dir, exist_ok=True)
 
-        existing_config = self._parse_config_file(self.persistence_config_file)
-        existing_config.update(config)
+        if os.path.exists(self.persistence_config_file):
+            updated_keys = set()
+            new_lines = []
+            with open(self.persistence_config_file, 'r', encoding='utf-8') as f:
+                for line in f:
+                    stripped = line.strip()
+                    if stripped and '=' in stripped and not stripped.startswith('#'):
+                        key = stripped.split('=', 1)[0].strip()
+                        if key in config:
+                            new_lines.append(f"{key}={config[key]}\n")
+                            updated_keys.add(key)
+                            continue
+                    else:
+                        if not line.endswith('\n'):
+                            line += '\n'
+                    new_lines.append(line)
 
-        with open(self.persistence_config_file, 'w', encoding='utf-8') as f:
-            f.write(self._get_persistence_config_header())
-            for key, value in existing_config.items():
-                f.write(f"{key}={value}\n")
+            for key, value in config.items():
+                if key not in updated_keys:
+                    new_lines.append(f"{key}={value}\n")
+
+            with open(self.persistence_config_file, 'w', encoding='utf-8') as f:
+                f.writelines(new_lines)
+        else:
+            with open(self.persistence_config_file, 'w', encoding='utf-8') as f:
+                f.write(self._get_persistence_config_header())
+                for key, value in config.items():
+                    f.write(f"{key}={value}\n")
 
         os.chmod(self.persistence_config_file, 0o600)
 

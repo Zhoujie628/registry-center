@@ -62,7 +62,7 @@ class PostgreSQLQueries(str, Enum):
     """
 
     FIND_BY_NAME = """
-        SELECT agent_card_json FROM agent_card WHERE name LIKE %s
+        SELECT agent_card_json FROM agent_card WHERE name ILIKE %s
     """
 
     FIND_BY_ORG = """

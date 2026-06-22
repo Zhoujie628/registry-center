@@ -133,7 +133,7 @@ class TestSetTagsHandler:
         result = handler.handle(params, mock_registry, mock_config)
 
         assert result["success"] is False
-        assert "Tag limit exceeded" in result["error"]
+        assert "exceeds maximum" in result["message"]
 
     def test_handle_set_tags_nonexistent_tag(self, handler, mock_registry, mock_config):
         params = {

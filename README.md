@@ -20,7 +20,7 @@ SPDX-License-Identifier: Apache-2.0
 # A2A-T AgentCard Registry Center
 
 <p align="center">
-  <a href="https://www.python.org/"><img src="https://img.shields.io/badge/python-3.10+-blue.svg" alt="Python"></a>
+  <a href="https://www.python.org/"><img src="https://img.shields.io/badge/python-3.12+-blue.svg" alt="Python"></a>
   <a href="LICENSE"><img src="https://img.shields.io/badge/license-Apache%202.0-green.svg" alt="License"></a>
 </p>
 
@@ -42,7 +42,7 @@ The Registry Center provides unified lifecycle management for **AgentCards** —
 
 **Use cases:** Telecom operators managing RAN optimization agents, enterprise platforms orchestrating vendor-provided AI services, internal systems with agent approval workflows.
 
-<img src="docs/zh/images/integrated_interactive_relationship.png" width="700" alt="Registry Center Integration Architecture">
+<img src="docs/en/images/integrated_interactive_relationship.png" width="700" alt="Registry Center Integration Architecture">
 
 ## Features
 
@@ -71,7 +71,7 @@ The Registry Center provides unified lifecycle management for **AgentCards** —
 
 ```bash
 # Clone the repository
-git clone https://gitcode.com/OpenAN/registry-center.git
+git clone https://github.com/project-openan/registry-center.git
 cd registry-center
 
 # Create and activate a virtual environment
@@ -185,7 +185,7 @@ See the [API Reference](docs/en/Registry%20Center%20API%20Reference.md) for full
 |-------------|---------|
 | `etc/conf/server.conf` | Server IP, port, TLS certificates, signing, approval, owner isolation |
 | `etc/conf/server.properties` | TLS versions, ciphers, connection/timeout/rate limits |
-| `etc/conf/persistence.conf` | Storage backend: `file` (default), `postgresql`, `sqlite` |
+| `etc/conf/persistence.conf` | Storage backend: `file` (default), `postgresql` |
 | `etc/conf/log_config.conf` | Audit log rotation (size, backup count) |
 | `common/config/llm_config.json` | LLM model endpoints for semantic search (OpenAI-compatible or AOC) |
 

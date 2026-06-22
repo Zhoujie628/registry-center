@@ -93,7 +93,7 @@ def get_registry_signer() -> Optional[AgentCardSigner]:
     if _registry_signer is None:
         sign_enabled_raw = config.get('registry.sign.enabled', 'false')
         sign_enabled = sign_enabled_raw.lower() == 'true'
-        logger.info(f"[DEBUG] registry.sign.enabled raw value: '{sign_enabled_raw}', parsed: {sign_enabled}")
+        logger.info(f"registry.sign.enabled raw value: '{sign_enabled_raw}', parsed: {sign_enabled}")
         
         if sign_enabled:
             private_key_path = config.get('jwk_private_key_path', '')
@@ -104,8 +104,8 @@ def get_registry_signer() -> Optional[AgentCardSigner]:
             port = config.get('port', '5000')
             jku_url = f"https://{ip}:{port}/rest/v1/registry-center/keys"
             
-            logger.info(f"[DEBUG] private_key_path: '{private_key_path}', cert_path: '{cert_path}', password_path: '{password_path}'")
-            logger.info(f"[DEBUG] jku_url: '{jku_url}' (ip='{ip}', port='{port}')")
+            logger.info(f"private_key_path: '{private_key_path}', cert_path: '{cert_path}', password_path: '{password_path}'")
+            logger.info(f"jku_url: '{jku_url}' (ip='{ip}', port='{port}')")
             
             if private_key_path and cert_path:
                 try:
@@ -124,12 +124,12 @@ def get_registry_signer() -> Optional[AgentCardSigner]:
                 logger.warning("Registry signer disabled: missing private_key_path or cert_path")
                 _registry_signer = AgentCardSigner(sign_enabled=False)
         else:
-            logger.info("[DEBUG] registry.sign.enabled is false, creating disabled signer")
+            logger.info("registry.sign.enabled is false, creating disabled signer")
             _registry_signer = AgentCardSigner(sign_enabled=False)
-            logger.info("[DEBUG] disabled signer created successfully")
+            logger.info("disabled signer created successfully")
     
     if _registry_signer:
-        logger.info(f"[DEBUG] registry_signer.is_enabled(): {_registry_signer.is_enabled()}")
+        logger.info(f"registry_signer.is_enabled(): {_registry_signer.is_enabled()}")
     return _registry_signer
 
 
@@ -265,7 +265,6 @@ jwk_semaphore = anyio.Semaphore(_get_int_config(config, FLOW_CTL_PARALLEL_JWK, 1
 class CustomHTTPException(HTTPException):
     def __init__(self, status_code: int, error_message: str):
         super().__init__(status_code=status_code, detail=error_message)
-        self.error_message = error_message
 
 @app.exception_handler(HTTPException)
 async def http_exception_handler(request: Request, exc: HTTPException):
@@ -556,6 +555,11 @@ async def register_agent(
             initial_status = 'registered' if approval_enabled == 'true' else 'published'
 
             result = await _perform_registration(agent, client_ip, details, initial_status=initial_status, owner=owner)
+            if not result:
+                raise CustomHTTPException(
+                    status.HTTP_409_CONFLICT,
+                    f"Agent '{agent.name}' already exists in organization '{agent.provider.organization}'"
+                )
             await _audit_result(OperationName.REGISTER_AGENT, result, details, client_ip)
 
         return Response(status_code=status.HTTP_201_CREATED)

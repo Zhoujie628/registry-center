@@ -74,15 +74,6 @@ DEFAULT_OUTPUT_FORMAT = "text"
 
 DEFAULT_TIMEOUT = 30
 
-# API Endpoints
-API_AGENTS_QUERY = "/rest/a2a-t/v1/agents/query"
-API_AGENTS_REGISTER = "/rest/a2a-t/v1/agents/register"
-API_AGENTS_GET = "/rest/a2a-t/v1/agents/{name}"
-API_AGENTS_UPDATE = "/rest/a2a-t/v1/update_agent/{name}"
-API_AGENTS_DEREGISTER = "/rest/a2a-t/v1/deregister_agent/{name}"
-API_AGENTS_RETRIEVE = "/rest/a2a-t/v1/agents/retrieve"
-
-
 # ========== I18n Configuration ==========
 
 DEFAULT_LANGUAGE = "en"

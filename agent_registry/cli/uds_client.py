@@ -74,6 +74,7 @@ class UDSClient:
         }
 
         client_socket = socket.socket(socket.AF_UNIX, socket.SOCK_STREAM)
+        client_socket.settimeout(10)
         try:
             client_socket.connect(self.socket_path)
         except FileNotFoundError:
@@ -96,9 +97,20 @@ class UDSClient:
             }
 
         try:
-            client_socket.send(json.dumps(request).encode('utf-8'))
+            client_socket.sendall(json.dumps(request).encode('utf-8'))
 
-            response = client_socket.recv(4096)
+            response_chunks = []
+            while True:
+                chunk = client_socket.recv(4096)
+                if not chunk:
+                    break
+                response_chunks.append(chunk)
+                try:
+                    json.loads(b''.join(response_chunks).decode('utf-8'))
+                    break
+                except json.JSONDecodeError:
+                    continue
+            response = b''.join(response_chunks)
             result = json.loads(response.decode('utf-8'))
 
             return result

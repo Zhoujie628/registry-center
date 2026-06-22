@@ -37,8 +37,8 @@ Analyze the user's task and select the best agents to fulfill it. Consider:
 3. If multiple agents can collaborate, select up to {top_n} agents
 4. If no suitable agent exists, return an empty list
 
-Return the agent names as a JSON array only. Example:
-["agent1","agent2"] or [] (if no suitable agent)
+Return the selected agents as a JSON array of objects with "name" and "organization" fields only. Example:
+[{{"name":"agent1","organization":"org1"}}] or [] (if no suitable agent)
 
 Selected agents:"""
 

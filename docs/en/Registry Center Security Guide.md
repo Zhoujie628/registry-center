@@ -12,7 +12,7 @@ The Registry Center security capabilities are as follows:
 
 ## Secure Communication (Inter-System TLS Communication)
 
-The Registry Center provides REST interfaces such as AgentCard registration, modification, and deletion (refer to the [Registry Center User Guide "API Capabilities" section](https://gitcode.com/OpenAN/registry-center/blob/main/docs/en/Registry%20Center%20User%20Guide.md#api-capabilities)). These interfaces use the HTTPS protocol by default to ensure communication channel security, with secure TLS protocol versions and cipher suites.<br>
+The Registry Center provides REST interfaces such as AgentCard registration, modification, and deletion (refer to the [Registry Center User Guide "API Capabilities" section](https://github.com/project-openan/registry-center/blob/main/docs/en/Registry%20Center%20User%20Guide.md#api-capabilities)). These interfaces use the HTTPS protocol by default to ensure communication channel security, with secure TLS protocol versions and cipher suites.<br>
 - TLS protocol versions: TLSv1.3, TLSv1.2<br>
 - Cipher suites: TLS_AES_256_GCM_SHA384,TLS_AES_128_GCM_SHA256,TLS_ECDHE_ECDSA_WITH_AES_256_GCM_SHA384,TLS_ECDHE_ECDSA_WITH_AES_128_GCM_SHA256,TLS_ECDHE_RSA_WITH_AES_256_GCM_SHA384,TLS_ECDHE_RSA_WITH_AES_128_GCM_SHA256,TLS_DHE_RSA_WITH_AES_256_GCM_SHA384,TLS_DHE_DSS_WITH_AES_256_GCM_SHA384,TLS_DHE_RSA_WITH_AES_128_GCM_SHA256,TLS_DHE_DSS_WITH_AES_128_GCM_SHA256<br>
 > **Note**: Protocol versions and cipher suites do not support modification<br>
@@ -57,7 +57,7 @@ Enable HTTPS (y/n, default: true):  y
 Configure server TLS certificate (RSA only):
 # Supports specifying relative and absolute paths. Relative paths are based on the project root path
 Enter server certificate path ssl_certfile: (current: etc/ssl/server.cer): /testdir/test_server.cer
-Enter server private key path ssl_keyfile: (current: etc/ssl/serve_key.pem): /testdir/test_key.pem
+Enter server private key path ssl_keyfile: (current: etc/ssl/server_key.pem): /testdir/test_key.pem
 Enter server trust certificate path ssl_ca_certs: (current: etc/ssl/trust.cer): /testdir/trust.cer
 # Certificate revocation list, can be left blank
 Enter server CRL file path ssl_cert_certs:
@@ -326,7 +326,7 @@ When this feature is not enabled, registered Agents are in the published state b
 When the review feature is enabled, registered Agents are in the registered state by default, and administrators can query all agent information (including agents whose state is not published) via the CLI command line.<br>
 Administrators can further query AgentCards in the registered state via the CLI command line for manual review.<br>
 After the administrator approves the agent, they can execute the CLI command to approve the agent, and the agent's state will change to published.<br>
-For CLI command line usage, refer to the [Registry Center User Guide "Management Capabilities (CLI)" section](./Registry%20Center%20User%20Guide.md#cli-management), which includes operations such as Agent management and tag management.
+For CLI command line usage, refer to the [Registry Center User Guide "Management Capabilities (CLI)" section](./Registry%20Center%20User%20Guide.md#management-capabilities-cli), which includes operations such as Agent management and tag management.
 
 ## Self-Signed Certificate Generation Tool
 
@@ -380,3 +380,4 @@ The certificate key algorithm is RSA, with a key length of 3072, a certificate v
 | Database Attack (2 items) | database injection, SQL injection |
 | Data Theft (11 items) | steal keys, steal secret keys<br>steal passwords, steal credentials<br>illegally obtain keys, illegally obtain passwords<br>illegally obtain credentials<br>steal data, data exfiltration<br>data leak, steal privacy<br>steal private data, illegally obtain privacy |
 | Network Attack (6 items) | network attack, network penetration<br>network intrusion, port scan<br>vulnerability scan, attack scan |
+| Command Execution (7 items) | execute code, execute command<br>run command, execute shell<br>remote execution, code execution, command execution |

@@ -51,7 +51,7 @@ def check_blacklist(text: str, blacklist: list, field_name: str):
         if pattern.lower() in text_lower:
             raise HTTPException(
                 status_code=status.HTTP_422_UNPROCESSABLE_CONTENT,
-                detail=f'{field_name} contains prohibited content: {pattern}')
+                detail=f'{field_name} contains prohibited content.')
 
 
 def validate_name(v: str):
@@ -63,6 +63,7 @@ def validate_name(v: str):
         raise HTTPException(
             status_code=status.HTTP_422_UNPROCESSABLE_CONTENT,
             detail='The name can contain only letters, digits, underscores (_), spaces.')
+    check_blacklist(v, MASTER_BLACKLIST_ALL, "name")
 
 
 def validate_description(description: str):
@@ -70,6 +71,10 @@ def validate_description(description: str):
         raise HTTPException(
             status_code=status.HTTP_422_UNPROCESSABLE_CONTENT,
             detail=f'The agent description can contain a maximum of {DESCRIPTION_MAX_LENGTH} characters.')
+    if _DANGEROUS_CHARS.search(description):
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_CONTENT,
+            detail='Agent description contains invalid or dangerous characters.')
     check_blacklist(description, PROMPT_INJECTION_BLACKLIST_ALL, "description")
     check_blacklist(description, DANGEROUS_SKILL_BLACKLIST_ALL, "description")
 
@@ -100,6 +105,15 @@ def validate_default_input_modes(default_input_modes: RepeatedScalarFieldContain
         raise HTTPException(
             status_code=status.HTTP_422_UNPROCESSABLE_CONTENT,
             detail=f'The agent default_input_modes can contain a maximum of {INPUT_OUTPUT_MAX_LENGTH} params.')
+    for mode in default_input_modes:
+        if len(mode) > INPUT_OUTPUT_MAX_LENGTH:
+            raise HTTPException(
+                status_code=status.HTTP_422_UNPROCESSABLE_CONTENT,
+                detail=f'Each default_input_mode must not exceed {INPUT_OUTPUT_MAX_LENGTH} characters.')
+        if _DANGEROUS_CHARS.search(mode):
+            raise HTTPException(
+                status_code=status.HTTP_422_UNPROCESSABLE_CONTENT,
+                detail='default_input_mode contains invalid or dangerous characters.')
 
 
 def validate_default_output_modes(default_output_modes: RepeatedScalarFieldContainer[str]):
@@ -107,6 +121,15 @@ def validate_default_output_modes(default_output_modes: RepeatedScalarFieldConta
         raise HTTPException(
             status_code=status.HTTP_422_UNPROCESSABLE_CONTENT,
             detail=f'The agent default_output_modes can contain a maximum of {INPUT_OUTPUT_MAX_LENGTH} params.')
+    for mode in default_output_modes:
+        if len(mode) > INPUT_OUTPUT_MAX_LENGTH:
+            raise HTTPException(
+                status_code=status.HTTP_422_UNPROCESSABLE_CONTENT,
+                detail=f'Each default_output_mode must not exceed {INPUT_OUTPUT_MAX_LENGTH} characters.')
+        if _DANGEROUS_CHARS.search(mode):
+            raise HTTPException(
+                status_code=status.HTTP_422_UNPROCESSABLE_CONTENT,
+                detail='default_output_mode contains invalid or dangerous characters.')
 
 
 def validate_skills(skills: RepeatedCompositeFieldContainer[AgentSkill]):

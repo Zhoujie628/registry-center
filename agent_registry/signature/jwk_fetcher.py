@@ -14,7 +14,7 @@
 #    WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied. See the
 #    License for the specific language governing permissions and limitations
 #    under the License.
-import requests
+import httpx
 from typing import Optional, Callable
 from jwt import PyJWK
 from loguru import logger
@@ -28,11 +28,10 @@ class JWKFetcher:
     REQUEST_TIMEOUT = 10
 
     def __init__(self, public_key_manager: Optional[PublicKeyManager] = None):
-        self.session = requests.Session()
-        self.session.timeout = self.REQUEST_TIMEOUT
+        self.session = httpx.AsyncClient(timeout=self.REQUEST_TIMEOUT)
         self.public_key_manager = public_key_manager
 
-    def fetch_jwks(self, jku: str) -> Optional[JWKS]:
+    async def fetch_jwks(self, jku: str) -> Optional[JWKS]:
         """
         Fetch JWKS from a URL.
 
@@ -49,18 +48,23 @@ class JWKFetcher:
                 logger.error(f"JKU must use HTTPS: {jku}")
                 return None
 
-            response = self.session.get(jku)
+            response = await self.session.get(jku)
             if response.status_code != 200:
                 logger.error(f"Failed to fetch JWKS, status: {response.status_code}")
+                return None
+
+            content_length = response.headers.get("Content-Length")
+            if content_length and int(content_length) > 1_048_576:
+                logger.error(f"JWKS response too large: {content_length} bytes (max 1MB)")
                 return None
 
             jwks_data = response.json()
             return JWKS(**jwks_data)
 
-        except requests.exceptions.Timeout:
+        except httpx.TimeoutException:
             logger.error(f"Timeout while fetching JWKS from: {jku}")
             return None
-        except requests.exceptions.RequestException as e:
+        except httpx.HTTPError as e:
             logger.error(f"Request error while fetching JWKS: {e}")
             return None
         except Exception as e:
@@ -79,6 +83,8 @@ class JWKFetcher:
         Returns:
             Optional[JWK]: JWK object, None if not found.
         """
+        if jwks is None:
+            return None
         try:
             for key in jwks.keys:
                 if key.kid == kid:
@@ -148,7 +154,7 @@ class JWKFetcher:
 
         return fetch_backend_key
 
-    def fetch_jku_key(self, kid: str, jku: str) -> Optional[PyJWK]:
+    async def fetch_jku_key(self, kid: str, jku: str) -> Optional[PyJWK]:
         """
         Fetch a public key from a jku URL.
 
@@ -159,7 +165,7 @@ class JWKFetcher:
         Returns:
             Optional[PyJWK]: JWK object, None if not found.
         """
-        jwks = self.fetch_jwks(jku)
+        jwks = await self.fetch_jwks(jku)
         if jwks:
             jwk = self.find_key_by_id(jwks, kid)
             if jwk:
@@ -185,17 +191,17 @@ class JWKFetcher:
                 "alg": jwk.alg
             }
 
-            if jwk.crv:
-                pyjwk_dict["crv"] = jwk.crv
-
-            pyjwk_dict["x"] = jwk.x
-            pyjwk_dict["y"] = jwk.y
-
-            if jwk.n:
-                pyjwk_dict["n"] = jwk.n
-
-            if jwk.e:
-                pyjwk_dict["e"] = jwk.e
+            if jwk.kty == "EC":
+                if jwk.crv:
+                    pyjwk_dict["crv"] = jwk.crv
+                pyjwk_dict["x"] = jwk.x
+                if jwk.y:
+                    pyjwk_dict["y"] = jwk.y
+            elif jwk.kty == "RSA":
+                if jwk.n:
+                    pyjwk_dict["n"] = jwk.n
+                if jwk.e:
+                    pyjwk_dict["e"] = jwk.e
 
             return PyJWK(pyjwk_dict)
 

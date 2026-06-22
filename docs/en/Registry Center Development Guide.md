@@ -62,7 +62,7 @@ Registry Center is a service focused on unified Agent management, enabling users
 1. Obtain the source code
 
     ```bash
-    git clone git@gitcode.com:OpenAN/registry-center.git
+    git clone https://github.com/project-openan/registry-center.git
     cd registry-center
     ```
 
@@ -551,7 +551,7 @@ The Registry Center provides a CLI command-line tool for local management of Age
     registry tag list
 
     # Set tags for an Agent
-    registry tag set --name "RAN Energy Saving Agent" --org "Huawei" --tags "wireless,energy-saving"
+    registry agent set-tags -n "RAN Energy Saving Agent" -o "Huawei" -t "wireless,energy-saving"
 
     # Delete a tag
     registry tag delete --id "tag-uuid"
@@ -581,7 +581,7 @@ Implement custom functionality through extended configuration, including storage
     persistence.mode=postgresql
     postgresql.host=127.0.0.1
     postgresql.port=5432
-    postgresql.name=a2a_registry
+    postgresql.name=registry_center
     postgresql.username=postgres
     postgresql.password=<encrypted_password>
     ```
@@ -1157,7 +1157,7 @@ print("Verification passed")
 
 | Configuration Item | Description | Default Value |
 |--------------------|-------------|---------------|
-| tls.version | TLS protocol version | TLSv1.2 |
+| tls.version | TLS protocol version | TLSv1.3,TLSv1.2 |
 | tls.cipher | TLS cipher suite list | See config file |
 | connection.max | Maximum connections | 500 |
 | connection.timeout | Connection timeout (seconds) | 300 |
@@ -1373,14 +1373,14 @@ Solutions:
 persistence.mode=postgresql
 postgresql.host=<your_host>
 postgresql.port=5432
-postgresql.name=a2a_registry
+postgresql.name=registry_center
 postgresql.username=<your_username>
 postgresql.password=<encrypted_password>
 ```
 
 2. Create the database:
 ```sql
-CREATE DATABASE a2a_registry;
+CREATE DATABASE registry_center;
 ```
 
 3. Restart the service
