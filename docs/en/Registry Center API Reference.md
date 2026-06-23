@@ -59,9 +59,9 @@
     | skills              | Yes    | array_reference | Maximum: 100 skills; maximum JSON serialized length per skill: 4096 characters. See [Table 7](#table-7-agentskill-object-parameters) for details. | -   | Skill list.               |
     | capabilities        | Yes    | reference       | See [Table 5](#table-5-agentcapabilities-object-parameters) for details.                            | -   | AgentCard capabilities.   |
     | supportedInterfaces | Yes    | array_reference | 1–3 interfaces. See [Table 3](#table-3-agentinterface-object-parameters) for details.              | -   | Supported protocols.      |
-| signatures          | No    | array            | List of signatures for AgentCard integrity verification.                                           | -   | Digital signatures.       |
-| defaultInputModes   | No    | array of string  | List of supported default input media types (MIME types).                                          | -   | Default input modes.      |
-| defaultOutputModes  | No    | array of string  | List of supported default output media types (MIME types).                                         | -   | Default output modes.     |
+    | signatures          | No    | array            | List of signatures for AgentCard integrity verification.                                           | -   | Digital signatures.       |
+    | defaultInputModes   | No    | array of string  | List of supported default input media types (MIME types).                                          | -   | Default input modes.      |
+    | defaultOutputModes  | No    | array of string  | List of supported default output media types (MIME types).                                         | -   | Default output modes.     |
 
   <a id="table-3-agentinterface-object-parameters"></a>**Table 3** AgentInterface object parameters
 
@@ -393,8 +393,8 @@
 
     | Parameter Name | Type     | Required | Description                                                         |
     |--------------|--------|----|--------------------------------------------------------------|
-| name         | string | Yes  | Agent name, passed as a path parameter. The name of the Agent to query.        |
-| organization | string | Yes  | The organization name to which the Agent belongs, passed as a path parameter. Together with name, it uniquely identifies an Agent. |
+    | name         | string | Yes  | Agent name, passed as a path parameter. The name of the Agent to query.        |
+    | organization | string | Yes  | The organization name to which the Agent belongs, passed as a path parameter. Together with name, it uniquely identifies an Agent. |
 
 - Request Example
 
