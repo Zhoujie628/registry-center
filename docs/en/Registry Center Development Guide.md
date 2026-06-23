@@ -71,7 +71,7 @@ Registry Center is a service focused on unified Agent management, enabling users
 ### Environment Requirements
 
 - OS: Linux (production environment); Windows for development and debugging
-- Python Version: 3.10+
+- Python Version: 3.12+
 - Network: IPv4 environment
 - Storage: Supports file storage, PostgreSQL (SQLite and GaussDB code reserved; the current initialization tool only supports file and postgresql)
 

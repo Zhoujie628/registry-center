@@ -86,7 +86,7 @@ Enter server private key password:
 Private key password complexity is low (Include at least two character types), continue using this password? (y/n):  y
 
 # Enable client certificate verification
-Enable client certificate verification verify_client (y/n, default: false): y
+Enable client certificate verification verify_client (y/n, default: true): y
 ```
 
 This project only reads and uses these certificates and does not provide certificate management capabilities such as certificate expiration alerts, backup and recovery, etc.<br>
@@ -288,7 +288,7 @@ The Registry Center performs the signing using the Registry Center's signing key
 The AgentCard signature field queried by the agent client from the Registry Center will include both the original AgentCard signature and the Registry Center signature.<br>
 
 Configure whether to enable this feature in the init command, command example:<br>
-Enable registry signing registry.sign.enabled (y/n, default: false): y
+Enable registry signing registry.sign.enabled (y/n, default: true): y
 <br>
 
 ```bash
@@ -297,7 +297,7 @@ Enable registry signing registry.sign.enabled (y/n, default: false): y
 # Other configuration items
 
 # Enable Registry Center signing
-Enable registry signing registry.sign.enabled (y/n, default: false): y
+Enable registry signing registry.sign.enabled (y/n, default: true): y
 
 Configure signing certificate (RSA only):
 Enter signing certificate path sign_certfile:  /testdir/test_client.cer

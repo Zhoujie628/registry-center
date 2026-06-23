@@ -29,7 +29,7 @@ from .blacklist_config import (
     MASTER_BLACKLIST_ALL
 )
 
-_NAME_PATTERN = re.compile(r'^[a-zA-Z0-9_]+(?:\s+[a-zA-Z0-9_]+)*$')
+_NAME_PATTERN = re.compile(r'^[a-zA-Z0-9_-]+(?:\s+[a-zA-Z0-9_-]+)*$')
 
 NAME_MAX_LENGTH = 100
 ORGANIZATION_MAX_LENGTH = 100
@@ -62,7 +62,7 @@ def validate_name(v: str):
     if not _NAME_PATTERN.fullmatch(v):
         raise HTTPException(
             status_code=status.HTTP_422_UNPROCESSABLE_CONTENT,
-            detail='The name can contain only letters, digits, underscores (_), spaces.')
+            detail='The name can contain only letters, digits, hyphens (-), underscores (_), spaces.')
     check_blacklist(v, MASTER_BLACKLIST_ALL, "name")
 
 
