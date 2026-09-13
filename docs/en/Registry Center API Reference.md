@@ -64,13 +64,13 @@ SPDX-License-Identifier: Apache-2.0
 
     | Parameter Name | Required | Type              | Value Range                                                          | Default | Description |
     |------------|------|-----------------|---------------------------------------------------------------|-----|------|
-    | agentCards | Yes    | array_reference | Currently only supports registration of a single AgentCard. See [Table 2](#table-2-agentcard-object-parameters) for details. | -   | -    |
+    | agentCards | Yes    | array_reference | Supports single or batch registration; must be a non-empty list. Batch registration processes cards in order and stops at the first failure (fail-fast); cards already registered are reported in the registeredAgents field of the error response. See [Table 2](#table-2-agentcard-object-parameters) for details. | -   | -    |
 
   <a id="table-2-agentcard-object-parameters"></a>**Table 2** AgentCard object parameters
     
     | Parameter Name      | Required | Type              | Value Range                                                                                         | Default | Description               |
     |---------------------|------|-----------------|-----------------------------------------------------------------------------------------------------|-----|---------------------------|
-    | name                | Yes    | string          | 1–100 characters. Must match the regular expression `^[a-zA-Z0-9_]+(?:\s+[a-zA-Z0-9_]+)*$`.         | -   | AgentCard name.           |
+    | name                | Yes    | string          | 1–100 characters. Must match the regular expression `^[a-zA-Z0-9_-]+(?:\s+[a-zA-Z0-9_-]+)*$`.         | -   | AgentCard name.           |
     | description         | Yes    | string          | 1–1000 characters.                                                                                  | -   | AgentCard description.    |
     | version             | Yes    | string          | 1–50 characters.                                                                                    | -   | AgentCard version.        |
     | provider            | Yes    | reference       | See [Table 4](#table-4-agentprovider-object-parameters) for details.                                | -   | Provider information.     |
@@ -205,11 +205,43 @@ SPDX-License-Identifier: Apache-2.0
 
 - Response Parameters
 
-    None.
+    Registration successful returns a results array with one entry per card, in the same order as the request agentCards.
+
+    | Parameter | Type | Description |
+    |------|----|------|
+    | results[].name           | string  | AgentCard name. |
+    | results[].organization   | string  | Provider organization. |
+    | results[].status         | string  | Status after registration: published (searchable) or registered (pending approval when agent_approval_enabled=true). |
+    | results[].registrySigned | boolean | Whether the registry center has countersigned the card. |
 
 - Response Example
 
-    Registration successful: No response body.
+    Registration successful:
+
+    ```json
+    HTTP/1.1 201 Created
+    {
+      "results": [
+        {
+          "name": "RAN Energy Saving Agent",
+          "organization": "Org",
+          "status": "published",
+          "registrySigned": false
+        }
+      ]
+    }
+    ```
+
+    In batch registration, the first failed card aborts the request (fail-fast). The error response additionally carries a registeredAgents field listing the cards already registered by this request, so the client can determine the retry scope:
+
+    ```json
+    {
+      "errors": {"error": [{"errorMessage": "Card 2/2 (Bad Agent!): ..."}]},
+      "registeredAgents": [
+        {"name": "RAN Energy Saving Agent", "organization": "Org", "status": "published", "registrySigned": false}
+      ]
+    }
+    ```
 
 - Status Codes
 
@@ -379,7 +411,6 @@ SPDX-License-Identifier: Apache-2.0
   | Status Code | Description               |
   |--------|----------------------|
   | 200 | Query successful, returns matching agents (empty list if none found). |
-  | 404 | Update failed, Agent not found.      |
   | 500 | Query failed, internal service error. |
   | 503 | Service busy.             |
 
@@ -391,7 +422,7 @@ SPDX-License-Identifier: Apache-2.0
 
 - Description
 
-    Based on the unique combination of Agent name and organization, precisely query and return the complete details of a single Agent. Returns 404 status code with error message if not found.
+    Based on the unique combination of Agent name and organization, precisely query and return the complete details of a single Agent. Only agents in published status are returned; if the agent does not exist or exists but is not published, the API returns 200 with an empty agentCards list, without distinguishing the two cases.
 
 - Interface Constraints
 
@@ -509,8 +540,7 @@ SPDX-License-Identifier: Apache-2.0
 
   | Status Code | Description                      |
   |--------|----------------------------|
-  | 200 | Query successful.                   |
-  | 404 | Query failed, Agent not found.          |
+  | 200 | Query successful (returns an empty agentCards list if the agent does not exist or is not published). |
   | 500 | Query failed, internal service error.         |
   | 503 | Service busy.                          |
 
@@ -522,7 +552,7 @@ SPDX-License-Identifier: Apache-2.0
 
 - Description
 
-    Completely replace an existing Agent. This API uses the complete AgentCard data in the request body to replace all information of the existing Agent. The name and organization in the request body must match the path parameters and query parameters.
+    Completely replace an existing Agent. This API uses the complete AgentCard data in the request body to replace all information of the existing Agent. The name and organization in the request body must match the path parameters and query parameters. The agentCards list in the request body must be non-empty; an empty list returns 422.
 
 - Interface Constraints
 
@@ -625,11 +655,32 @@ SPDX-License-Identifier: Apache-2.0
 
 - Response Parameters
 
-    None.
+    Update successful returns a results array with one entry per card, in the same order as the request agentCards.
+
+    | Parameter | Type | Description |
+    |------|----|------|
+    | results[].name           | string  | AgentCard name. |
+    | results[].organization   | string  | Provider organization. |
+    | results[].registrySigned | boolean | Whether the registry center has countersigned the card. |
 
 - Response Example
 
-    Update successful: No response body.
+    Update successful:
+
+    ```json
+    HTTP/1.1 200 OK
+    {
+      "results": [
+        {
+          "name": "RAN Energy Saving Agent",
+          "organization": "Org",
+          "registrySigned": false
+        }
+      ]
+    }
+    ```
+
+    In batch update, the first failed card aborts the request (fail-fast). The error response additionally carries an updatedAgents field listing the cards already updated by this request.
 
 - Status Codes
 
@@ -684,11 +735,24 @@ SPDX-License-Identifier: Apache-2.0
 
 - Response Parameters
 
-    None.
+    | Parameter | Type | Description |
+    |------|----|------|
+    | name         | string  | Name of the deleted Agent. |
+    | organization | string  | Provider organization. |
+    | deleted      | boolean | Always true, indicating successful deletion. |
 
 - Response Example
 
-    Deletion successful: No response body.
+    Deletion successful:
+
+    ```json
+    HTTP/1.1 200 OK
+    {
+      "name": "RAN Energy Saving Agent",
+      "organization": "Org",
+      "deleted": true
+    }
+    ```
 
 - Status Codes
 
@@ -707,7 +771,7 @@ SPDX-License-Identifier: Apache-2.0
 
 - Description
 
-    This API receives a natural language task description as input, analyzes the task intent through semantic understanding capabilities, and ultimately outputs the list of Agents best matching the task.
+    This API receives a natural language task description as input, analyzes the task intent through semantic understanding capabilities, and ultimately outputs the list of Agents best matching the task. Semantic retrieval depends on the LLM service configured in common/config/llm_config.json (chat model); when the LLM service is unavailable, the API returns 200 with an empty agentCards list, indistinguishable from "no match".
 
 - Interface Constraints
 
@@ -830,8 +894,7 @@ SPDX-License-Identifier: Apache-2.0
 
   | Status Code | Description                      |
   |--------|----------------------------|
-  | 200 | Query successful.                   |
-  | 404 | Query failed, Agent not found.          |
+  | 200 | Query successful (returns an empty agentCards list if no agent matches). |
   | 500 | Query failed, internal service error.      |
   | 503 | Service busy.                          |
 

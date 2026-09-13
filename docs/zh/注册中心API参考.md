@@ -65,13 +65,13 @@ SPDX-License-Identifier: Apache-2.0
 
     | 参数名称       | 是否必选 | 类型              | 值域                                            | 默认值 | 描述 |
     |------------|------|-----------------|-----------------------------------------------|-----|------|
-    | agentCards | 是    | array_reference | 当前只支持单个AgentCard的注册，详细请参见[表2](#表2-agentcard对象的参数列表)。 | -   | -    |
+    | agentCards | 是    | array_reference | 支持单卡或批量注册，必须为非空列表。批量注册按顺序逐卡处理，任一卡失败即中止（fail-fast），已成功注册的卡片通过错误响应的registeredAgents字段返回。详细请参见[表2](#表2-agentcard对象的参数列表)。 | -   | -    |
 
   <a id="表2-agentcard对象的参数列表"></a>**表2** AgentCard对象的参数列表
     
     | 参数名称                | 是否必选 | 类型              | 值域                                                                 | 默认值 | 描述         |
     |---------------------|------|-----------------|--------------------------------------------------------------------|-----|--------------|
-    | name                | 是    | string          | 1~100个字符。满足正则表达式`^[a-zA-Z0-9_]+(?:\s+[a-zA-Z0-9_]+)*$`。            | -   | AgentCard名称。  |
+    | name                | 是    | string          | 1~100个字符。满足正则表达式`^[a-zA-Z0-9_-]+(?:\s+[a-zA-Z0-9_-]+)*$`。            | -   | AgentCard名称。  |
     | description         | 是    | string          | 1~1000个字符。                                                         | -   | AgentCard描述。  |
     | version             | 是    | string          | 1~50个字符。                                                           | -   | AgentCard版本。  |
     | provider            | 是    | reference       | 详细请参见[表4](#表4-agentprovider对象的参数列表)。                                       | -   | 提供商信息。        |
@@ -206,11 +206,43 @@ SPDX-License-Identifier: Apache-2.0
 
 - 响应参数
 
-    无。
+    注册成功返回results数组，每张卡一个条目，顺序与请求agentCards一致。
+
+    | 参数名称 | 类型 | 描述 |
+    |------|----|------|
+    | results[].name           | string  | AgentCard名称。 |
+    | results[].organization   | string  | 所属组织机构。 |
+    | results[].status         | string  | 注册后的状态：published（可被检索）或registered（待审核，审核开关agent_approval_enabled=true时）。 |
+    | results[].registrySigned | boolean | 注册中心是否已对该卡片会签。 |
 
 - 响应样例
 
-    注册成功：无响应体。
+    注册成功：
+
+    ```json
+    HTTP/1.1 201 Created
+    {
+      "results": [
+        {
+          "name": "RAN Energy Saving Agent",
+          "organization": "Org",
+          "status": "published",
+          "registrySigned": false
+        }
+      ]
+    }
+    ```
+
+    批量注册任一卡失败时按fail-fast中止并返回错误，错误响应额外携带registeredAgents字段，列出本请求中已成功注册的卡片，便于客户端确定重试范围：
+
+    ```json
+    {
+      "errors": {"error": [{"errorMessage": "Card 2/2 (Bad Agent!): ..."}]},
+      "registeredAgents": [
+        {"name": "RAN Energy Saving Agent", "organization": "Org", "status": "published", "registrySigned": false}
+      ]
+    }
+    ```
 
 - 状态码
 
@@ -379,8 +411,7 @@ SPDX-License-Identifier: Apache-2.0
 
   | 状态码 | 说明    |
   |--------|-------|
-  | 200 | 查询成功。 |
-  | 404 | 查询失败，Agent未找到。 |
+  | 200 | 查询成功（无匹配Agent时返回空agentCards列表）。 |
   | 500 | 查询失败，服务内部错误。 |
   | 503 | 服务繁忙。 |
 
@@ -392,7 +423,7 @@ SPDX-License-Identifier: Apache-2.0
 
 - 功能描述
 
-    根据Agent的name和organization的唯一组合，精确查询并返回单个Agent的完整详细信息，查不到返回404状态码和错误信息。
+    根据Agent的name和organization的唯一组合，精确查询并返回单个Agent的完整详细信息。仅返回已发布（published）状态的Agent；Agent不存在或存在但未发布时均返回200和空agentCards列表，两者不做区分。
 
 - 接口约束
 
@@ -510,8 +541,7 @@ SPDX-License-Identifier: Apache-2.0
 
   | 状态码 | 说明             |
   |--------|----------------|
-  | 200 | 查询成功。          |
-  | 404 | 查询失败，Agent未找到。 |
+  | 200 | 查询成功（Agent不存在或未发布时返回空agentCards列表）。 |
   | 500 | 查询失败，服务内部错误。        |
   | 503 | 服务繁忙。 |
 
@@ -523,7 +553,7 @@ SPDX-License-Identifier: Apache-2.0
 
 - 功能描述
 
-    完全替换一个已存在的Agent。该接口使用请求体中的完整AgentCard数据替换现有Agent的全部信息。请求体中的名称和组织机构必须与路径参数和查询参数匹配。
+    完全替换一个已存在的Agent。该接口使用请求体中的完整AgentCard数据替换现有Agent的全部信息。请求体中的名称和组织机构必须与路径参数和查询参数匹配。请求体agentCards必须为非空列表，为空时返回422。
 
 - 接口约束
 
@@ -626,11 +656,32 @@ SPDX-License-Identifier: Apache-2.0
 
 - 响应参数
 
-    无。
+    修改成功返回results数组，每张卡一个条目，顺序与请求agentCards一致。
+
+    | 参数名称 | 类型 | 描述 |
+    |------|----|------|
+    | results[].name           | string  | AgentCard名称。 |
+    | results[].organization   | string  | 所属组织机构。 |
+    | results[].registrySigned | boolean | 注册中心是否已对该卡片会签。 |
 
 - 响应样例
 
-    修改成功：无响应体。
+    修改成功：
+
+    ```json
+    HTTP/1.1 200 OK
+    {
+      "results": [
+        {
+          "name": "RAN Energy Saving Agent",
+          "organization": "Org",
+          "registrySigned": false
+        }
+      ]
+    }
+    ```
+
+    批量更新任一卡失败时按fail-fast中止并返回错误，错误响应额外携带updatedAgents字段，列出本请求中已成功更新的卡片。
 
 - 状态码
 
@@ -685,11 +736,24 @@ SPDX-License-Identifier: Apache-2.0
 
 - 响应参数
 
-    无。
+    | 参数名称 | 类型 | 描述 |
+    |------|----|------|
+    | name         | string  | 已删除的Agent名称。 |
+    | organization | string  | 所属组织机构。 |
+    | deleted      | boolean | 固定为true，表示删除成功。 |
 
 - 响应样例
 
-    删除成功，无响应体。
+    删除成功：
+
+    ```json
+    HTTP/1.1 200 OK
+    {
+      "name": "RAN Energy Saving Agent",
+      "organization": "Org",
+      "deleted": true
+    }
+    ```
 
 - 状态码
 
@@ -708,7 +772,7 @@ SPDX-License-Identifier: Apache-2.0
 
 - 功能描述
 
-    该接口接收自然语言任务描述作为输入，通过语义理解能力分析任务意图，最终输出与任务最匹配的Agent列表。
+    该接口接收自然语言任务描述作为输入，通过语义理解能力分析任务意图，最终输出与任务最匹配的Agent列表。语义检索依赖LLM服务，需在common/config/llm_config.json中配置可用的chat模型；LLM服务不可用时返回200和空agentCards列表，与无匹配Agent不可区分。
 
 - 接口约束
 
@@ -831,8 +895,7 @@ SPDX-License-Identifier: Apache-2.0
 
   | 状态码 | 说明             |
   |--------|----------------|
-  | 200 | 查询成功。          |
-  | 404 | 查询失败，Agent未找到。 |
+  | 200 | 查询成功（无匹配Agent时返回空agentCards列表）。 |
   | 500 | 查询失败，服务内部错误。   |
   | 503 | 服务繁忙。          |
 
