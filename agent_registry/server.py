@@ -26,12 +26,14 @@ and persistence using a JSON file.
 
 import asyncio
 import json
+import time
 from functools import partial
 from typing import Optional, Tuple, Any, Dict
 
 import anyio
 from a2a.types import AgentCard
 from fastapi import FastAPI, HTTPException, Query, Request, Depends, status, Path
+from fastapi.exceptions import RequestValidationError
 from fastapi.responses import JSONResponse
 from google.protobuf.json_format import Parse, MessageToDict
 from loguru import logger
@@ -269,22 +271,43 @@ deregister_semaphore = anyio.Semaphore(_get_int_config(config, FLOW_CTL_PARALLEL
 jwk_semaphore = anyio.Semaphore(_get_int_config(config, FLOW_CTL_PARALLEL_JWK, 1))
 
 class CustomHTTPException(HTTPException):
-    def __init__(self, status_code: int, error_message: str):
+    def __init__(self, status_code: int, error_message: str, extra: Optional[dict] = None):
         super().__init__(status_code=status_code, detail=error_message)
+        self.extra = extra
 
 @app.exception_handler(HTTPException)
 async def http_exception_handler(request: Request, exc: HTTPException):
+    content = {
+        "errors": {
+            "error": [
+                {
+                    "errorMessage": exc.detail
+                }
+            ]
+        }
+    }
+    if getattr(exc, "extra", None):
+        content.update(exc.extra)
+    return JSONResponse(status_code=exc.status_code, content=content)
+
+
+@app.exception_handler(RequestValidationError)
+async def request_validation_exception_handler(request: Request, exc: RequestValidationError):
+    error_messages = "; ".join(
+        "{}: {}".format(".".join(str(loc) for loc in error.get("loc", [])), error.get("msg", ""))
+        for error in exc.errors()
+    )
     return JSONResponse(
-        status_code=exc.status_code,
+        status_code=status.HTTP_422_UNPROCESSABLE_CONTENT,
         content={
             "errors": {
                 "error": [
                     {
-                        "errorMessage": exc.detail
+                        "errorMessage": error_messages or "Request validation failed"
                     }
                 ]
             }
-        }
+        },
     )
 
 # ---------- Middleware ----------
@@ -465,10 +488,12 @@ async def _perform_registration(
     except ValueError as e:
         details["message"] = str(e)
         await _audit_failure(OperationName.REGISTER_AGENT, details, client_ip)
+        logger.error(f"Register agent failed: name={agent.name}, org={agent.provider.organization}, reason={e}")
         raise CustomHTTPException(status.HTTP_400_BAD_REQUEST, str(e)) from e
     except Exception as e:
+        details["message"] = "Internal server error"
         await _audit_failure(OperationName.REGISTER_AGENT, details, client_ip)
-        logger.error(f"Unexpected error in register: {e}")
+        logger.exception(f"Unexpected error in register: name={agent.name}, org={agent.provider.organization}")
         raise CustomHTTPException(status.HTTP_500_INTERNAL_SERVER_ERROR,"Internal server error") from e
 
 
@@ -484,15 +509,18 @@ async def _perform_update(
     try:
         update_handle = HandlerRegistry.get_handler(InterfaceType.UPDATE)
         success = await update_handle.handle(name, organization, data, owner=owner)
-        await _audit_result(OperationName.UPDATE_AGENT, True, data, client_ip)
+        if success:
+            await _audit_result(OperationName.UPDATE_AGENT, True, details, client_ip)
         return success
     except ValueError as e:
         details["message"] = str(e)
         await _audit_failure(OperationName.UPDATE_AGENT, details, client_ip)
+        logger.error(f"Update agent failed: name={name}, org={organization}, reason={e}")
         raise CustomHTTPException(status.HTTP_400_BAD_REQUEST, str(e)) from e
     except Exception as e:
+        details["message"] = "Internal server error"
         await _audit_failure(OperationName.UPDATE_AGENT, details, client_ip)
-        logger.error(f"Unexpected error in update: {e}")
+        logger.exception(f"Unexpected error in update: name={name}, org={organization}")
         raise CustomHTTPException(status.HTTP_500_INTERNAL_SERVER_ERROR,"Internal server error") from e
 
 
@@ -511,64 +539,90 @@ async def register_agent(
     """
     Register a new agent.
     The combination (name, provider.organization) must be unique.
-    Returns True if registered, False if duplicate.
+    On success returns 201 with a per-card result list:
+    {"results": [{"name", "organization", "status", "registrySigned"}]},
+    where "status" is "published" or "registered" (pending approval).
+    On failure the error response additionally carries "registeredAgents" with the
+    cards already registered by this request (partial success visibility).
     """
     body = await request.json()
     agent_cards = body.get("agentCards", [])
     if not agent_cards:
         raise CustomHTTPException(status.HTTP_422_UNPROCESSABLE_CONTENT, "agentCards must be a non-empty list")
     client_ip = request.client.host
+    total_cards = len(agent_cards)
 
     owner = _get_owner_from_request(request) if OWNER_ISOLATION_ENABLED else None
 
     authenticate_handle = HandlerRegistry.get_handler(InterfaceType.AUTHENTICATE)
     await authenticate_handle.handle(client_ip, request)
 
+    registered_results = []
     async with semaphore_guard(register_semaphore):
-        for agent_card in agent_cards:
+        for index, agent_card in enumerate(agent_cards, start=1):
             agent = Parse(json.dumps(agent_card), AgentCard())
+            card_started = time.perf_counter()
             logger.info(
-                f"Register agent request: name={agent.name}, org={agent.provider.organization}, client={client_ip}, owner={owner}")
+                f"Register agent request: card={index}/{total_cards}, name={agent.name}, org={agent.provider.organization}, client={client_ip}, owner={owner}")
             details = {
                 "agentName": agent.name,
                 "organization": agent.provider.organization,
                 "url": agent.provider.url,
             }
-            await _check_agent_limit(registry, client_ip, details)
-            await _check_duplicate_agent(agent, registry, client_ip, details)
             try:
-                validate_agent_card(agent)
-            except HTTPException as e:
-                logger.error(f"Agent card validation failed: {agent.name}, {agent.provider.organization}")
-                raise CustomHTTPException(e.status_code, e.detail)
+                await _check_agent_limit(registry, client_ip, details)
+                await _check_duplicate_agent(agent, registry, client_ip, details)
+                try:
+                    validate_agent_card(agent)
+                except HTTPException as e:
+                    details["message"] = e.detail
+                    await _audit_failure(OperationName.REGISTER_AGENT, details, client_ip)
+                    raise CustomHTTPException(
+                        e.status_code, f"Card {index}/{total_cards} ({agent.name}): {e.detail}") from e
 
-            signature_result = signature_validator.validate_agent_card(agent)
-            if not signature_result.is_valid:
-                details["message"] = signature_result.error_message
-                await _audit_failure(OperationName.REGISTER_AGENT, details, client_ip)
-                raise CustomHTTPException(
-                    status.HTTP_401_UNAUTHORIZED,
-                    signature_result.error_message or "Signature verification failed"
-                )
+                signature_result = signature_validator.validate_agent_card(agent)
+                if not signature_result.is_valid:
+                    details["message"] = signature_result.error_message
+                    await _audit_failure(OperationName.REGISTER_AGENT, details, client_ip)
+                    raise CustomHTTPException(
+                        status.HTTP_401_UNAUTHORIZED,
+                        f"Card {index}/{total_cards} ({agent.name}): "
+                        f"{signature_result.error_message or 'Signature verification failed'}"
+                    )
 
-            logger.info(f"Register agent success: name={agent.name}, org={agent.provider.organization}")
+                registry_signed = bool(registry_signer and registry_signer.is_enabled())
+                if registry_signed:
+                    agent = registry_signer.sign_agent_card(agent)
+                    logger.info(f"Registry signature added for agent: card={index}/{total_cards}, name={agent.name}")
 
-            if registry_signer and registry_signer.is_enabled():
-                agent = registry_signer.sign_agent_card(agent)
-                logger.info(f"Registry signature added for agent: {agent.name}")
+                approval_enabled = config.get('agent_approval_enabled', 'false')
+                initial_status = 'registered' if approval_enabled == 'true' else 'published'
 
-            approval_enabled = config.get('agent_approval_enabled', 'false')
-            initial_status = 'registered' if approval_enabled == 'true' else 'published'
+                result = await _perform_registration(agent, client_ip, details, initial_status=initial_status, owner=owner)
+                if not result:
+                    raise CustomHTTPException(
+                        status.HTTP_409_CONFLICT,
+                        f"Agent '{agent.name}' already exists in organization '{agent.provider.organization}'"
+                    )
+                await _audit_result(OperationName.REGISTER_AGENT, result, details, client_ip)
 
-            result = await _perform_registration(agent, client_ip, details, initial_status=initial_status, owner=owner)
-            if not result:
-                raise CustomHTTPException(
-                    status.HTTP_409_CONFLICT,
-                    f"Agent '{agent.name}' already exists in organization '{agent.provider.organization}'"
-                )
-            await _audit_result(OperationName.REGISTER_AGENT, result, details, client_ip)
+                duration_ms = int((time.perf_counter() - card_started) * 1000)
+                logger.info(
+                    f"Register agent success: card={index}/{total_cards}, name={agent.name}, org={agent.provider.organization}, status={initial_status}, registrySigned={registry_signed}, duration={duration_ms}ms")
+                registered_results.append({
+                    "name": agent.name,
+                    "organization": agent.provider.organization,
+                    "status": initial_status,
+                    "registrySigned": registry_signed,
+                })
+            except CustomHTTPException as e:
+                logger.error(
+                    f"Register batch aborted at card {index}/{total_cards}: name={agent.name}, org={agent.provider.organization}, httpStatus={e.status_code}, detail={e.detail}")
+                if e.extra is None:
+                    e.extra = {"registeredAgents": registered_results}
+                raise
 
-        return Response(status_code=status.HTTP_201_CREATED)
+        return JSONResponse(status_code=status.HTTP_201_CREATED, content={"results": registered_results})
 
 
 @app.get(
@@ -608,7 +662,7 @@ async def list_agents_exact(
         return {"agentCards": published_agents}
 
 
-@app.put("/rest/v1/registry-center/agent-cards/{organization}/{name}", response_model=bool, summary="Full update(replace) an agent")
+@app.put("/rest/v1/registry-center/agent-cards/{organization}/{name}", summary="Full update(replace) an agent")
 async def update_agent(
         request: Request,
         name: str = Path(..., description="Agent name"),
@@ -620,54 +674,79 @@ async def update_agent(
 ):
     """
     Fully replace an existing agent. The name and organization in the body must match the path/query.
-    Returns True if updated, False if not found.
+    On success returns 200 with {"results": [{"name", "organization", "registrySigned"}]}.
+    Returns 404 if the agent does not exist.
     """
     body_json = await request.json()
     agent_cards = body_json.get("agentCards", [])
+    if not agent_cards:
+        raise CustomHTTPException(status.HTTP_422_UNPROCESSABLE_CONTENT, "agentCards must be a non-empty list")
     client_ip = request.client.host
+    total_cards = len(agent_cards)
 
     owner = await _verify_owner_permission(request, name, organization, registry) if OWNER_ISOLATION_ENABLED else None
 
     authenticate_handle = HandlerRegistry.get_handler(InterfaceType.AUTHENTICATE)
     await authenticate_handle.handle(client_ip, request)
 
+    updated_results = []
     async with semaphore_guard(update_semaphore):
-        for agent_card in agent_cards:
+        for index, agent_card in enumerate(agent_cards, start=1):
             agent_data = Parse(json.dumps(agent_card), AgentCard())
-            logger.info(f"Update agent request: name={name}, org={organization}, client={client_ip}, owner={owner}")
+            card_started = time.perf_counter()
+            logger.info(f"Update agent request: card={index}/{total_cards}, name={name}, org={organization}, client={client_ip}, owner={owner}")
             details = {
                 "agentName": agent_data.name,
                 "organization": agent_data.provider.organization,
                 "url": agent_data.provider.url,
             }
             try:
-                validate_agent_card(agent_data)
-            except HTTPException as e:
-                logger.error(f"Agent card validation failed: {agent_data.name}, {agent_data.provider.organization}")
-                raise CustomHTTPException(e.status_code, e.detail)
+                try:
+                    validate_agent_card(agent_data)
+                except HTTPException as e:
+                    details["message"] = e.detail
+                    await _audit_failure(OperationName.UPDATE_AGENT, details, client_ip)
+                    raise CustomHTTPException(
+                        e.status_code, f"Card {index}/{total_cards} ({agent_data.name}): {e.detail}") from e
 
-            signature_result = signature_validator.validate_agent_card(agent_data)
-            if not signature_result.is_valid:
-                details["message"] = signature_result.error_message
-                await _audit_failure(OperationName.UPDATE_AGENT, details, client_ip)
-                raise CustomHTTPException(
-                    status.HTTP_401_UNAUTHORIZED,
-                    signature_result.error_message or "Signature verification failed"
-                )
+                signature_result = signature_validator.validate_agent_card(agent_data)
+                if not signature_result.is_valid:
+                    details["message"] = signature_result.error_message
+                    await _audit_failure(OperationName.UPDATE_AGENT, details, client_ip)
+                    raise CustomHTTPException(
+                        status.HTTP_401_UNAUTHORIZED,
+                        f"Card {index}/{total_cards} ({agent_data.name}): "
+                        f"{signature_result.error_message or 'Signature verification failed'}"
+                    )
 
-            if registry_signer and registry_signer.is_enabled():
-                agent_data = registry_signer.sign_agent_card(agent_data)
-                logger.info(f"Registry signature added for agent: {agent_data.name}")
+                registry_signed = bool(registry_signer and registry_signer.is_enabled())
+                if registry_signed:
+                    agent_data = registry_signer.sign_agent_card(agent_data)
+                    logger.info(f"Registry signature added for agent: card={index}/{total_cards}, name={agent_data.name}")
 
-            data = MessageToDict(agent_data, preserving_proto_field_name=True)
-            success = await _perform_update(client_ip, name, organization, data, details, owner=owner)
-            if not success:
-                raise CustomHTTPException(status.HTTP_404_NOT_FOUND, "Agent not found")
-            logger.info(f"Update agent success: name={name}, org={organization}")
-        return Response(status_code=status.HTTP_200_OK)
+                data = MessageToDict(agent_data, preserving_proto_field_name=True)
+                success = await _perform_update(client_ip, name, organization, data, details, owner=owner)
+                if not success:
+                    raise CustomHTTPException(status.HTTP_404_NOT_FOUND, "Agent not found")
+
+                duration_ms = int((time.perf_counter() - card_started) * 1000)
+                logger.info(
+                    f"Update agent success: card={index}/{total_cards}, name={name}, org={organization}, registrySigned={registry_signed}, duration={duration_ms}ms")
+                updated_results.append({
+                    "name": name,
+                    "organization": organization,
+                    "registrySigned": registry_signed,
+                })
+            except CustomHTTPException as e:
+                logger.error(
+                    f"Update batch aborted at card {index}/{total_cards}: name={name}, org={organization}, httpStatus={e.status_code}, detail={e.detail}")
+                if e.extra is None:
+                    e.extra = {"updatedAgents": updated_results}
+                raise
+        return JSONResponse(status_code=status.HTTP_200_OK, content={"results": updated_results})
 
 
-@app.delete("/rest/v1/registry-center/agent-cards/{organization}/{name}", response_model=bool, summary="Deregister an agent")
+@app.delete("/rest/v1/registry-center/agent-cards/{organization}/{name}", summary="Deregister an agent")
 async def deregister_agent(
         request: Request,
         name: str = Path(..., description="Agent name"),
@@ -677,7 +756,8 @@ async def deregister_agent(
 ):
     """
     Remove an agent from the registry.
-    Returns True if deleted, False if not found.
+    On success returns 200 with {"name", "organization", "deleted": true}.
+    Returns 404 if the agent does not exist.
     """
     client_ip = request.client.host
 
@@ -696,7 +776,10 @@ async def deregister_agent(
         if not success:
             raise CustomHTTPException(status.HTTP_404_NOT_FOUND, "Agent not found")
         logger.info(f"Deregister agent success: name={name}, org={organization}")
-        return Response(status_code=status.HTTP_200_OK)
+        return JSONResponse(
+            status_code=status.HTTP_200_OK,
+            content={"name": name, "organization": organization, "deleted": True},
+        )
 
 
 @app.post("/rest/v1/registry-center/agent-cards/semantic-query", response_model=None, summary="Fuzzy retrieve by task")

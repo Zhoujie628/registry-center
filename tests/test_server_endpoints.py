@@ -111,6 +111,35 @@ class TestRegisterEndpoint:
                 json={"agentCards": [VALID_AGENT_CARD]}
             )
             assert response.status_code == 201
+            body = response.json()
+            assert body["results"] == [{
+                "name": "TestAgent",
+                "organization": "TestOrg",
+                "status": "published",
+                "registrySigned": False,
+            }]
+
+    def test_register_batch_failure_reports_registered_agents(self, mock_registry, mock_validator, mock_signer):
+        _override_deps(mock_registry, mock_validator, mock_signer)
+        mock_handler = MagicMock()
+        mock_handler.handle = AsyncMock(return_value=True)
+
+        with patch('common.custom.custom_handle.HandlerRegistry.get_handler', return_value=mock_handler):
+            client = TestClient(app)
+            invalid_card = dict(VALID_AGENT_CARD, name="Bad Agent!")
+            response = client.post(
+                "/rest/v1/registry-center/agent-cards",
+                json={"agentCards": [VALID_AGENT_CARD, invalid_card]}
+            )
+            assert response.status_code == 422
+            body = response.json()
+            assert body["registeredAgents"] == [{
+                "name": "TestAgent",
+                "organization": "TestOrg",
+                "status": "published",
+                "registrySigned": False,
+            }]
+            assert "Card 2/2" in body["errors"]["error"][0]["errorMessage"]
 
     def test_register_duplicate_returns_409(self, mock_registry, mock_validator, mock_signer):
         _override_deps(mock_registry, mock_validator, mock_signer)
@@ -125,6 +154,63 @@ class TestRegisterEndpoint:
                 json={"agentCards": [VALID_AGENT_CARD]}
             )
             assert response.status_code == 409
+
+    def test_register_empty_agent_cards_returns_422(self, mock_registry, mock_validator, mock_signer):
+        _override_deps(mock_registry, mock_validator, mock_signer)
+        client = TestClient(app)
+        response = client.post(
+            "/rest/v1/registry-center/agent-cards",
+            json={"agentCards": []}
+        )
+        assert response.status_code == 422
+        body = response.json()
+        assert "non-empty" in body["errors"]["error"][0]["errorMessage"]
+
+
+class TestUpdateEndpoint:
+
+    def test_update_success_returns_result_body(self, mock_registry, mock_validator, mock_signer):
+        _override_deps(mock_registry, mock_validator, mock_signer)
+        mock_handler = MagicMock()
+        mock_handler.handle = AsyncMock(return_value=True)
+
+        with patch('common.custom.custom_handle.HandlerRegistry.get_handler', return_value=mock_handler):
+            client = TestClient(app)
+            response = client.put(
+                "/rest/v1/registry-center/agent-cards/TestOrg/TestAgent",
+                json={"agentCards": [VALID_AGENT_CARD]}
+            )
+            assert response.status_code == 200
+            body = response.json()
+            assert body["results"] == [{
+                "name": "TestAgent",
+                "organization": "TestOrg",
+                "registrySigned": False,
+            }]
+
+    def test_update_not_found_returns_404(self, mock_registry, mock_validator, mock_signer):
+        _override_deps(mock_registry, mock_validator, mock_signer)
+        mock_handler = MagicMock()
+        mock_handler.handle = AsyncMock(return_value=False)
+
+        with patch('common.custom.custom_handle.HandlerRegistry.get_handler', return_value=mock_handler):
+            client = TestClient(app)
+            response = client.put(
+                "/rest/v1/registry-center/agent-cards/TestOrg/TestAgent",
+                json={"agentCards": [VALID_AGENT_CARD]}
+            )
+            assert response.status_code == 404
+
+    def test_update_empty_agent_cards_returns_422(self, mock_registry, mock_validator, mock_signer):
+        _override_deps(mock_registry, mock_validator, mock_signer)
+        client = TestClient(app)
+        response = client.put(
+            "/rest/v1/registry-center/agent-cards/TestOrg/TestAgent",
+            json={"agentCards": []}
+        )
+        assert response.status_code == 422
+        body = response.json()
+        assert "non-empty" in body["errors"]["error"][0]["errorMessage"]
 
 
 class TestGetEndpoint:
@@ -153,6 +239,36 @@ class TestGetSingleEndpoint:
             client = TestClient(app)
             response = client.get("/rest/v1/registry-center/agent-cards/TestOrg/TestAgent")
             assert response.status_code == 200
+            body = response.json()
+            assert len(body["agentCards"]) == 1
+            assert body["agentCards"][0]["name"] == "TestAgent"
+
+    def test_get_single_agent_not_found_returns_empty_list(self, mock_registry, mock_validator, mock_signer):
+        # 当前设计：不存在、未发布、正常命中三种情况都难以区分——不存在与未发布均返回 200 + 空列表
+        _override_deps(mock_registry, mock_validator, mock_signer)
+        mock_handler = MagicMock()
+        mock_handler.handle = AsyncMock(return_value=None)
+
+        with patch('common.custom.custom_handle.HandlerRegistry.get_handler', return_value=mock_handler):
+            client = TestClient(app)
+            response = client.get("/rest/v1/registry-center/agent-cards/TestOrg/MissingAgent")
+            assert response.status_code == 200
+            assert response.json() == {"agentCards": []}
+
+    def test_get_single_agent_unpublished_returns_empty_list(self, mock_registry, mock_validator, mock_signer):
+        # 当前设计：存在但未发布（registered）与不存在返回相同——200 + 空列表，不暴露存在性
+        _override_deps(mock_registry, mock_validator, mock_signer)
+        agent = _mock_agent()
+        record = AgentRecord(agent_card=agent, owner=None, status="registered")
+        mock_handler = MagicMock()
+        mock_handler.handle = AsyncMock(return_value=record)
+        mock_registry.get_status.return_value = "registered"
+
+        with patch('common.custom.custom_handle.HandlerRegistry.get_handler', return_value=mock_handler):
+            client = TestClient(app)
+            response = client.get("/rest/v1/registry-center/agent-cards/TestOrg/TestAgent")
+            assert response.status_code == 200
+            assert response.json() == {"agentCards": []}
 
 
 class TestDeleteEndpoint:
@@ -166,6 +282,7 @@ class TestDeleteEndpoint:
             client = TestClient(app)
             response = client.delete("/rest/v1/registry-center/agent-cards/TestOrg/TestAgent")
             assert response.status_code == 200
+            assert response.json() == {"name": "TestAgent", "organization": "TestOrg", "deleted": True}
 
     def test_delete_not_found(self, mock_registry, mock_validator, mock_signer):
         _override_deps(mock_registry, mock_validator, mock_signer)
