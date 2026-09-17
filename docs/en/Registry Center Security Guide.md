@@ -348,6 +348,30 @@ Administrators can further query AgentCards in the registered state via the CLI 
 After the administrator approves the agent, they can execute the CLI command to approve the agent, and the agent's state will change to published.<br>
 For CLI command line usage, refer to the [Registry Center User Guide "Management Capabilities (CLI)" section](./Registry%20Center%20User%20Guide.md#management-capabilities-cli), which includes operations such as Agent management and tag management.
 
+## Change Broadcast Security
+
+When the change broadcast capability is enabled (`broadcast.enabled=true`), the Registry Center pushes registry change events to subscriber callback URLs. The following security mechanisms apply:
+
+### Callback URL SSRF Protection
+
+Subscription callback URLs are HTTPS-only by default; HTTP can be allowed only in development environments via `broadcast.allow.http.callbacks=true`. After `broadcast.callback.allowlist` (comma-separated domain names) is configured, only allowlisted callback hosts are accepted, preventing the Registry Center from being tricked into sending requests to internal network addresses.
+
+### Webhook Message Signature Verification
+
+It is recommended to provide a `secret` when creating a subscription. When pushing events, the Registry Center attaches the following headers:
+
+| Header | Description |
+|--------|------|
+| X-Registry-Signature | Signature value in the format `sha256={hex}`, computed as `HMAC-SHA256(secret, "{X-Registry-Timestamp}.{request body}")` |
+| X-Registry-Timestamp | Delivery initiation timestamp (seconds). Subscribers should reject requests whose timestamp differs by more than 5 minutes to prevent replay |
+| X-Registry-Event-Id | ID of the first event in the batch, for troubleshooting |
+
+Subscribers must verify both the signature and the timestamp window, and reject events that fail verification. Events of subscriptions without a `secret` are unsigned and should only be used in trusted internal networks.
+
+### Subscription Credential Management
+
+Treat the subscription `secret` as a credential: database access permissions should be governed the same way as the primary storage; subscription management APIs (create/query/delete) are for administrators only, and the query API response never echoes the secret.
+
 ## Self-Signed Certificate Generation Tool
 
 Provides a standalone tool for generating self-signed certificates for debugging scenarios. Note that such certificates must not be used in production environments.<br>

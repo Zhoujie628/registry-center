@@ -57,6 +57,8 @@ The Registry Center provides unified lifecycle management for **AgentCards** —
 | **Owner Isolation** | Per-agent ownership via TLS client certificate CN, strict or relaxed mode |
 | **Content Safety** | Prompt injection and high-risk skill blacklist filtering on registration |
 | **Rate Limiting** | Per-endpoint rate limits (configurable: 50–100 req/s, JWK endpoint: 10 req/s) with moving-window algorithm |
+| **Heartbeat Detection** | Agents periodically report liveness; configurable failure threshold and grace period to identify offline agents promptly |
+| **Change Broadcast** | Registry changes pushed to subscribers via webhooks (HMAC signing, debouncing, rate limiting, outbox persistence) with version-based reconciliation |
 | **Audit Logging** | Rotating JSON audit log (time, client IP, user, operation, object, result) |
 | **CLI Administration** | Interactive CLI for agent approval, tag management, and full agent listing |
 | **Custom Extensions** | Pluggable handlers (auth, audit, decrypt, storage) and LLM providers |
@@ -176,6 +178,12 @@ flowchart TB
 | `DELETE` | `/rest/v1/registry-center/agent-cards/{org}/{name}` | Deregister an agent |
 | `POST` | `/rest/v1/registry-center/agent-cards/semantic-query` | Semantic search by task description |
 | `GET` | `/rest/v1/registry-center/keys` | Retrieve registry signing public keys (JWK Set) |
+| `POST` | `/rest/v1/registry-center/agent-cards/{org}/{name}/heartbeat` | Report agent heartbeat |
+| `GET` | `/rest/v1/registry-center/agents/health` | Query agent health status list |
+| `POST` | `/rest/v1/registry-center/subscriptions` | Create a change subscription |
+| `GET` | `/rest/v1/registry-center/subscriptions` | List subscriptions |
+| `DELETE` | `/rest/v1/registry-center/subscriptions/{id}` | Delete a subscription |
+| `GET` | `/rest/v1/registry-center/changes` | Change reconciliation (incremental pull by version) |
 
 See the [API Reference](docs/en/Registry%20Center%20API%20Reference.md) for full request/response schemas, error codes, and constraints.
 

@@ -57,6 +57,8 @@ SPDX-License-Identifier: Apache-2.0
 | **所有者隔离** | 基于 TLS 客户端证书 CN 的 Agent 操作隔离，支持严格/宽松两种模式 |
 | **内容安全** | Prompt 注入关键词和高危 Skill 描述的黑名单过滤（默认启用，不可关闭） |
 | **流控限流** | 按接口粒度的速率限制（可配置：50–100 次/秒，JWK 端点：10 次/秒）和并发控制 |
+| **心跳检测** | Agent 周期上报存活状态，可配置失败阈值与宽限期，及时发现离线 Agent |
+| **变更广播** | 注册表变更通过 Webhook 实时推送订阅方（HMAC 签名、防抖、限流、Outbox 持久化），支持版本号对账 |
 | **日志审计** | 滚动 JSON 格式审计日志，记录操作六要素（时间、客户端IP、用户、操作、对象、结果） |
 | **CLI 管理** | 交互式命令行工具，支持 Agent 审批、标签管理、全量 Agent 查询 |
 | **自定义扩展** | 可插拔的处理器（认证、审计、解密、存储）和大模型（LLM）提供者 |
@@ -176,6 +178,12 @@ flowchart TB
 | `DELETE` | `/rest/v1/registry-center/agent-cards/{org}/{name}` | 注销指定 Agent |
 | `POST` | `/rest/v1/registry-center/agent-cards/semantic-query` | 按任务描述语义检索 Agent |
 | `GET` | `/rest/v1/registry-center/keys` | 获取注册中心验签公钥（JWK Set） |
+| `POST` | `/rest/v1/registry-center/agent-cards/{org}/{name}/heartbeat` | Agent 心跳上报 |
+| `GET` | `/rest/v1/registry-center/agents/health` | 查询 Agent 健康状态列表 |
+| `POST` | `/rest/v1/registry-center/subscriptions` | 创建变更订阅 |
+| `GET` | `/rest/v1/registry-center/subscriptions` | 查询订阅列表 |
+| `DELETE` | `/rest/v1/registry-center/subscriptions/{id}` | 删除订阅 |
+| `GET` | `/rest/v1/registry-center/changes` | 变更对账查询（按版本号增量拉取） |
 
 完整接口规范、请求/响应示例、错误码说明请参阅 [API 参考](docs/zh/注册中心API参考.md)。
 

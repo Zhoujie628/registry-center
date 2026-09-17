@@ -30,6 +30,10 @@ SPDX-License-Identifier: Apache-2.0
   - **Delete Specific AgentCard**: Delete an AgentCard that is no longer needed.
   - **Semantic Query AgentCard**: Search for matching AgentCards based on natural language semantics.
   - **Public Key Management**: Provide an API to retrieve the Registry Center's signing public key.
+  - **Agent Heartbeat Reporting**: Agents periodically report liveness; the Registry Center maintains health status based on heartbeats.
+  - **Agent Health Query**: Query the health status list of heartbeat-monitored Agents.
+  - **Change Subscription Management**: Create, query, and delete registry change broadcast subscriptions.
+  - **Change Reconciliation**: Pull registry change events by version number so subscribers can catch up.
 
 ### Constraints and Limitations
 
@@ -978,3 +982,415 @@ SPDX-License-Identifier: Apache-2.0
   | 200 | Retrieval successful.              |
   | 429 | Retrieval failed, rate limit exceeded. |
   | 500 | Retrieval failed, internal service error. |
+
+## Report Agent Heartbeat
+
+- Typical Scenario
+
+    After deployment, an Agent periodically calls this API to report liveness. When heartbeat detection is enabled, the Registry Center maintains Agent health status based on heartbeat times and the failure threshold.
+
+- Description
+
+    Records the server-side receive time of the Agent's most recent heartbeat. If the Agent was previously suspect or offline, receiving a heartbeat immediately restores it to healthy and publishes a health change event.
+
+- Constraints
+
+  - Health tracking takes effect only when `heartbeat.enabled=true`; when disabled, the API returns 200 with `heartbeat_enabled` set to false and records nothing.
+  - The Agent must be registered; unregistered Agents receive 404.
+  - Rate limit: 100 requests/second/IP by default, configurable via `flowcontrol.ratelimit.heartbeat`.
+  - The heartbeat time is always the server-side receive time; timestamps provided by the request are not trusted.
+
+- Method
+
+    POST
+
+- URI
+
+    */rest/v1/registry-center/agent-cards/{organization}/{name}/heartbeat*
+
+- Request Parameters
+
+  <a id="table-18-heartbeat-path-parameters"></a>**Table 18** Path parameters
+
+    | Parameter    | Mandatory | Type   | Value Range | Default | Description                        |
+    |--------------|-----------|--------|-------------|---------|------------------------------------|
+    | organization | Yes       | string | 1~100 chars | -       | Agent organization, same as registered. |
+    | name         | Yes       | string | 1~100 chars | -       | Agent name, same as registered.         |
+
+    The request body may be empty.
+
+- Example Request
+
+    ```http
+    POST /rest/v1/registry-center/agent-cards/TestOrg/DemoAgent/heartbeat HTTP/1.1
+    Host: your-domain.com
+    ```
+
+- Response Parameters
+
+  <a id="table-19-heartbeat-response-parameters"></a>**Table 19** Response parameters
+
+    | Parameter         | Type    | Description                                                              |
+    |-------------------|---------|--------------------------------------------------------------------------|
+    | heartbeat_enabled | boolean | Whether heartbeat detection is enabled.                                   |
+    | interval          | int     | Expected heartbeat period (seconds). Agents should report with this period plus ±10% random jitter. |
+    | failure_threshold | int     | An Agent is marked offline after missing this many consecutive periods.    |
+    | grace_period      | int     | Suspect-state buffer duration (seconds).                                   |
+    | server_time       | string  | Current server time (ISO 8601) for Agent clock alignment.                  |
+    | health_status     | string  | Current health status: healthy/suspect/offline/unknown.                    |
+
+- Example Response
+
+    ```json
+    {
+      "heartbeat_enabled": true,
+      "interval": 30,
+      "failure_threshold": 3,
+      "grace_period": 10,
+      "server_time": "2026-09-17T12:00:00.123456+00:00",
+      "health_status": "healthy"
+    }
+    ```
+
+- Status Codes
+
+  | Status Code | Description                          |
+  |--------|--------------------------------------|
+  | 200 | Report successful.                   |
+  | 401 | Authentication failed.               |
+  | 404 | Agent not registered.                |
+  | 429 | Report failed, rate limit exceeded.  |
+  | 500 | Report failed, internal service error. |
+  | 503 | Server busy.                         |
+
+## Query Agent Health Status List
+
+- Typical Scenario
+
+    A system administrator queries the health status of all heartbeat-monitored Agents from an observability dashboard to identify offline Agents promptly.
+
+- Description
+
+    Returns the health status list of all heartbeat-monitored Agents with optional status filtering.
+
+- Constraints
+
+  - Returns data only when `heartbeat.enabled=true`; otherwise returns an empty list.
+  - The status filter value must be one of healthy/suspect/offline/unknown.
+
+- Method
+
+    GET
+
+- URI
+
+    */rest/v1/registry-center/agents/health*
+
+- Request Parameters
+
+  <a id="table-20-health-query-parameters"></a>**Table 20** Query parameters
+
+    | Parameter | Mandatory | Type   | Value Range                    | Default | Description           |
+    |-----------|-----------|--------|--------------------------------|---------|-----------------------|
+    | status    | No        | string | healthy/suspect/offline/unknown | -       | Filter by health status. |
+
+- Example Request
+
+    ```http
+    GET /rest/v1/registry-center/agents/health?status=offline HTTP/1.1
+    Host: your-domain.com
+    ```
+
+- Response Parameters
+
+  <a id="table-21-health-status-object"></a>**Table 21** Health status object
+
+    | Parameter          | Type   | Description                                     |
+    |--------------------|--------|-------------------------------------------------|
+    | name               | string | Agent name.                                     |
+    | organization       | string | Agent organization.                             |
+    | health_status      | string | Health status.                                  |
+    | last_heartbeat_at  | string | Server-side receive time of the last heartbeat. |
+    | status_changed_at  | string | Time of the last health status transition.       |
+
+- Example Response
+
+    ```json
+    {
+      "agents": [
+        {
+          "name": "DemoAgent",
+          "organization": "TestOrg",
+          "health_status": "offline",
+          "last_heartbeat_at": "2026-09-17T11:07:00.056845+00:00",
+          "status_changed_at": "2026-09-17T11:07:07.595837+00:00"
+        }
+      ]
+    }
+    ```
+
+- Status Codes
+
+  | Status Code | Description                        |
+  |--------|------------------------------------|
+  | 200 | Query successful.                  |
+  | 400 | Invalid status filter value.       |
+  | 500 | Query failed, internal service error. |
+
+## Create Change Subscription
+
+- Typical Scenario
+
+    A service operator wants real-time notifications when registry data changes (registration, update, deregistration, health changes), and first registers a callback URL through this API.
+
+- Description
+
+    Creates a change broadcast subscription. When matching change events occur, the Registry Center pushes events in batches to the subscriber via HTTPS callback, signed with HMAC-SHA256 for verification.
+
+- Constraints
+
+  - Available only when `broadcast.enabled=true`; otherwise 503.
+  - callback_url must be HTTPS; HTTP can be allowed in development via `broadcast.allow.http.callbacks=true`.
+  - When `broadcast.callback.allowlist` is configured, only allowlisted callback hosts are accepted.
+  - Rate limit: 50 requests/second/IP by default.
+
+- Method
+
+    POST
+
+- URI
+
+    */rest/v1/registry-center/subscriptions*
+
+- Request Parameters
+
+  <a id="table-22-subscription-body-parameters"></a>**Table 22** Body parameters
+
+    | Parameter    | Mandatory | Type            | Value Range                                                          | Default     | Description                                              |
+    |--------------|-----------|-----------------|----------------------------------------------------------------------|-------------|----------------------------------------------------------|
+    | callback_url | Yes       | string          | 1~2048 chars, HTTPS URL                                              | -           | Event callback URL.                                       |
+    | event_types  | No        | array of string | AGENT_REGISTERED/AGENT_UPDATED/AGENT_DEREGISTERED/AGENT_HEALTH_CHANGED | All types   | Event type whitelist to subscribe to.                     |
+    | filters      | No        | reference       | -                                                                    | -           | Filter conditions. See [Table 23](#table-23-subscription-filters). |
+    | secret       | No        | string          | 1~256 chars                                                          | -           | HMAC-SHA256 signing secret, recommended; events are unsigned if omitted. |
+
+  <a id="table-23-subscription-filters"></a>**Table 23** Subscription filters
+
+    | Parameter     | Mandatory | Type            | Description              |
+    |---------------|-----------|-----------------|--------------------------|
+    | organizations | No        | array of string | Filter by Agent organization. |
+    | tags          | No        | array of string | Filter by Agent tags.         |
+
+- Example Request
+
+    ```json
+    {
+      "callback_url": "https://operator.example.com/registry-events",
+      "event_types": ["AGENT_REGISTERED", "AGENT_UPDATED", "AGENT_DEREGISTERED", "AGENT_HEALTH_CHANGED"],
+      "filters": {"organizations": ["acme"]},
+      "secret": "whsec-demo"
+    }
+    ```
+
+- Response Parameters
+
+  <a id="table-24-subscription-object"></a>**Table 24** Subscription object
+
+    | Parameter       | Type   | Description                          |
+    |-----------------|--------|--------------------------------------|
+    | subscription_id | string | Unique subscription ID for query and deletion. |
+    | callback_url    | string | Callback URL.                        |
+    | event_types     | array  | Subscribed event types.              |
+    | filters         | object | Filter conditions.                   |
+    | created_at      | string | Creation time.                       |
+
+- Example Response
+
+    ```json
+    {
+      "subscription_id": "sub_6133a2d93b32459990bf",
+      "callback_url": "https://operator.example.com/registry-events",
+      "event_types": ["AGENT_REGISTERED", "AGENT_UPDATED"],
+      "filters": {"organizations": ["acme"], "tags": null},
+      "created_at": "2026-09-17T11:07:14.009321+00:00"
+    }
+    ```
+
+- Status Codes
+
+  | Status Code | Description                                 |
+  |--------|---------------------------------------------|
+  | 201 | Created successfully.                       |
+  | 422 | Invalid request parameters (callback URL, event types, etc.). |
+  | 429 | Creation failed, rate limit exceeded.       |
+  | 500 | Creation failed, internal service error.    |
+  | 503 | Change broadcast is disabled.               |
+
+## Query Subscription List
+
+- Typical Scenario
+
+    An administrator views active change subscriptions and their callback configurations.
+
+- Description
+
+    Returns all change subscriptions. The response does not include the secret.
+
+- Constraints
+
+  - Available only when `broadcast.enabled=true`; otherwise 503.
+
+- Method
+
+    GET
+
+- URI
+
+    */rest/v1/registry-center/subscriptions*
+
+- Request Parameters
+
+    None.
+
+- Example Response
+
+    ```json
+    {
+      "subscriptions": [
+        {
+          "subscription_id": "sub_6133a2d93b32459990bf",
+          "callback_url": "https://operator.example.com/registry-events",
+          "event_types": null,
+          "filters": {"organizations": null, "tags": null},
+          "created_at": "2026-09-17T11:07:14.009321+00:00"
+        }
+      ]
+    }
+    ```
+
+- Status Codes
+
+  | Status Code | Description                        |
+  |--------|------------------------------------|
+  | 200 | Query successful.                  |
+  | 500 | Query failed, internal service error. |
+  | 503 | Change broadcast is disabled.      |
+
+## Delete Subscription
+
+- Typical Scenario
+
+    A subscriber cancels the subscription when it no longer needs change notifications.
+
+- Description
+
+    Deletes a change subscription by ID. The Registry Center stops pushing events to the callback URL afterwards.
+
+- Constraints
+
+  - Available only when `broadcast.enabled=true`; otherwise 503.
+
+- Method
+
+    DELETE
+
+- URI
+
+    */rest/v1/registry-center/subscriptions/{subscription_id}*
+
+- Request Parameters
+
+  <a id="table-25-delete-subscription-path-parameters"></a>**Table 25** Path parameters
+
+    | Parameter       | Mandatory | Type   | Description            |
+    |-----------------|-----------|--------|------------------------|
+    | subscription_id | Yes       | string | Unique subscription ID. |
+
+- Example Response
+
+    ```json
+    {
+      "subscription_id": "sub_6133a2d93b32459990bf",
+      "deleted": true
+    }
+    ```
+
+- Status Codes
+
+  | Status Code | Description                        |
+  |--------|------------------------------------|
+  | 200 | Deletion successful.               |
+  | 404 | Subscription not found.            |
+  | 500 | Deletion failed, internal service error. |
+  | 503 | Change broadcast is disabled.      |
+
+## Change Reconciliation Query
+
+- Typical Scenario
+
+    A subscriber uses this API to incrementally pull change events by version when it receives a `SYNC_REQUIRED` summary event, suspects missed events, or performs periodic verification.
+
+- Description
+
+    Returns events whose `registry_version` is greater than the given since value (ascending), which together with the full AgentCard query supports initial synchronization and missed-event recovery.
+
+- Constraints
+
+  - Events are retained for `broadcast.outbox.retention.days` (7 days by default); expired events cannot be retrieved.
+  - Maximum 1000 events per page.
+
+- Method
+
+    GET
+
+- URI
+
+    */rest/v1/registry-center/changes*
+
+- Request Parameters
+
+  <a id="table-26-reconciliation-query-parameters"></a>**Table 26** Query parameters
+
+    | Parameter | Mandatory | Type | Value Range | Default | Description                           |
+    |-----------|-----------|------|-------------|---------|---------------------------------------|
+    | since     | No        | int  | >=0         | 0       | Last known registry_version.          |
+    | limit     | No        | int  | 1~1000      | 100     | Maximum events per page.              |
+
+- Response Parameters
+
+  <a id="table-27-change-event-object"></a>**Table 27** Change event object
+
+    | Parameter        | Type   | Description                                                            |
+    |------------------|--------|------------------------------------------------------------------------|
+    | event_id         | string | Unique event ID (UUID) for subscriber-side idempotent deduplication.    |
+    | event_type       | string | Event type; see the event_types description in [Table 22](#table-22-subscription-body-parameters). |
+    | timestamp        | string | Event creation time (server clock).                                     |
+    | registry_version | int    | Globally monotonic version number of the Registry Center.               |
+    | data             | object | Event payload: card events contain name/organization/agent_card/tags; health events contain health_status/previous_health_status. |
+    | has_more         | boolean | Whether more pages exist.                                               |
+    | next_since       | int    | Starting point for the next page (registry_version of the last event on this page). |
+
+- Example Response
+
+    ```json
+    {
+      "changes": [
+        {
+          "event_id": "0198f6a2-7c1d-7cc2-9a3b-4f2e1d0c9b8a",
+          "event_type": "AGENT_REGISTERED",
+          "timestamp": "2026-09-17T12:00:00.123456+00:00",
+          "registry_version": 1,
+          "data": {"name": "DemoAgent", "organization": "TestOrg"}
+        }
+      ],
+      "has_more": false,
+      "next_since": 1
+    }
+    ```
+
+- Status Codes
+
+  | Status Code | Description                        |
+  |--------|------------------------------------|
+  | 200 | Query successful.                  |
+  | 429 | Query failed, rate limit exceeded. |
+  | 500 | Query failed, internal service error. |

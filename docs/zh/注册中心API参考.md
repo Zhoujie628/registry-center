@@ -31,6 +31,10 @@ SPDX-License-Identifier: Apache-2.0
   - **删除指定AgentCard**：删除不再使用的AgentCard。
   - **按语义检索AgentCard**：根据自然语言语义检索相匹配的AgentCard。
   - **公钥管理**：提供注册中心签名公钥的获取接口。
+  - **Agent心跳上报**：Agent周期性上报存活状态，注册中心据此维护健康状态。
+  - **Agent健康状态查询**：查询心跳监控的Agent健康状态列表。
+  - **变更订阅管理**：创建、查询、删除注册表变更广播订阅。
+  - **变更对账查询**：按版本号拉取注册表变更事件，用于订阅方补齐数据。
 
 ### 约束与限制
 
@@ -979,3 +983,415 @@ SPDX-License-Identifier: Apache-2.0
   | 200 | 获取成功。        |
   | 429 | 获取失败，超过流控限制。 |
   | 500 | 获取失败，服务内部错误。 |
+
+## Agent心跳上报
+
+- 典型场景
+
+    Agent部署后周期性调用该接口上报存活状态；注册中心开启心跳检测后，依据心跳时间与失败阈值维护Agent健康状态。
+
+- 功能描述
+
+    记录Agent最近一次心跳的服务端接收时间。若Agent此前处于可疑（suspect）或离线（offline）状态，收到心跳后立即恢复为健康（healthy）并发布健康变更事件。
+
+- 接口约束
+
+  - 仅当`heartbeat.enabled=true`时进行健康跟踪；开关关闭时接口返回200但`heartbeat_enabled`为false，不做任何记录。
+  - Agent必须已注册，未注册的Agent返回404。
+  - 接口流控：默认100次/秒/IP，可通过`flowcontrol.ratelimit.heartbeat`配置。
+  - 心跳时间以服务端接收时间为准，不信任请求携带的时间戳。
+
+- 调用方法
+
+    POST
+
+- URI
+
+    */rest/v1/registry-center/agent-cards/{organization}/{name}/heartbeat*
+
+- 请求参数
+
+  <a id="表18-心跳路径参数"></a>**表18** 路径参数
+
+    | 参数名称       | 是否必选 | 类型     | 值域 | 默认值 | 描述            |
+    |------------|------|--------|-----|-----|---------------|
+    | organization | 是   | string | 1~100个字符 | -   | Agent所属组织，与注册时一致。 |
+    | name         | 是   | string | 1~100个字符 | -   | Agent名称，与注册时一致。   |
+
+    请求体可为空。
+
+- 请求示例
+
+    ```http
+    POST /rest/v1/registry-center/agent-cards/TestOrg/DemoAgent/heartbeat HTTP/1.1
+    Host: your-domain.com
+    ```
+
+- 响应参数
+
+  <a id="表19-心跳响应参数"></a>**表19** 响应参数
+
+    | 参数名称              | 类型     | 描述                                       |
+    |-------------------|--------|------------------------------------------|
+    | heartbeat_enabled | boolean | 心跳检测是否开启。                                 |
+    | interval          | int    | 期望心跳周期（秒），Agent应以此周期附加±10%随机抖动上报。          |
+    | failure_threshold | int    | 连续错过的周期数量达到该值后判定为离线。                       |
+    | grace_period      | int    | 可疑状态缓冲时长（秒）。                               |
+    | server_time       | string | 服务端当前时间（ISO 8601），供Agent校准时钟。               |
+    | health_status     | string | 当前健康状态：healthy/suspect/offline/unknown。    |
+
+- 响应样例
+
+    ```json
+    {
+      "heartbeat_enabled": true,
+      "interval": 30,
+      "failure_threshold": 3,
+      "grace_period": 10,
+      "server_time": "2026-09-17T12:00:00.123456+00:00",
+      "health_status": "healthy"
+    }
+    ```
+
+- 状态码
+
+  | 状态码 | 说明                     |
+  |--------|------------------------|
+  | 200 | 上报成功。                  |
+  | 401 | 认证失败。                  |
+  | 404 | Agent未注册。              |
+  | 429 | 上报失败，超过流控限制。           |
+  | 500 | 上报失败，服务内部错误。           |
+  | 503 | 服务繁忙。                  |
+
+## 查询Agent健康状态列表
+
+- 典型场景
+
+    系统管理员通过监控大盘查询所有心跳监控Agent的健康状态，及时发现离线Agent。
+
+- 功能描述
+
+    返回所有已纳入心跳监控的Agent健康状态列表，支持按健康状态过滤。
+
+- 接口约束
+
+  - 仅当`heartbeat.enabled=true`时返回数据，否则返回空列表。
+  - status过滤值必须是healthy/suspect/offline/unknown之一。
+
+- 调用方法
+
+    GET
+
+- URI
+
+    */rest/v1/registry-center/agents/health*
+
+- 请求参数
+
+  <a id="表20-健康查询参数"></a>**表20** Query参数
+
+    | 参数名称  | 是否必选 | 类型     | 值域                                      | 默认值 | 描述        |
+    |-------|------|--------|-------------------------------------------|-----|-----------|
+    | status | 否   | string | healthy/suspect/offline/unknown | -   | 按健康状态过滤。  |
+
+- 请求示例
+
+    ```http
+    GET /rest/v1/registry-center/agents/health?status=offline HTTP/1.1
+    Host: your-domain.com
+    ```
+
+- 响应参数
+
+  <a id="表21-健康状态对象"></a>**表21** 健康状态对象
+
+    | 参数名称               | 类型     | 描述                    |
+    |--------------------|--------|-----------------------|
+    | name               | string | Agent名称。              |
+    | organization       | string | Agent所属组织。            |
+    | health_status      | string | 健康状态。                 |
+    | last_heartbeat_at  | string | 最近一次心跳的服务端接收时间。        |
+    | status_changed_at  | string | 最近一次健康状态迁移时间。          |
+
+- 响应样例
+
+    ```json
+    {
+      "agents": [
+        {
+          "name": "DemoAgent",
+          "organization": "TestOrg",
+          "health_status": "offline",
+          "last_heartbeat_at": "2026-09-17T11:07:00.056845+00:00",
+          "status_changed_at": "2026-09-17T11:07:07.595837+00:00"
+        }
+      ]
+    }
+    ```
+
+- 状态码
+
+  | 状态码 | 说明           |
+  |--------|--------------|
+  | 200 | 查询成功。        |
+  | 400 | status过滤值非法。 |
+  | 500 | 查询失败，服务内部错误。 |
+
+## 创建变更订阅
+
+- 典型场景
+
+    服务运营方需要在注册表数据变化（注册、更新、注销、健康状态变化）时收到实时通知，先通过该接口登记回调地址。
+
+- 功能描述
+
+    创建一个变更广播订阅。注册中心在产生匹配的变更事件后，通过HTTPS回调将事件批量推送给订阅方，事件携带HMAC-SHA256签名供订阅方验签。
+
+- 接口约束
+
+  - 仅当`broadcast.enabled=true`时可用，否则返回503。
+  - callback_url必须为HTTPS地址；开发环境可通过`broadcast.allow.http.callbacks=true`放开HTTP。
+  - 配置`broadcast.callback.allowlist`后，仅白名单内的回调主机可用。
+  - 接口流控：默认50次/秒/IP。
+
+- 调用方法
+
+    POST
+
+- URI
+
+    */rest/v1/registry-center/subscriptions*
+
+- 请求参数
+
+  <a id="表22-订阅body参数"></a>**表22** body参数列表
+
+    | 参数名称        | 是否必选 | 类型              | 值域 | 默认值 | 描述                                        |
+    |-------------|------|-----------------|-----|-----|-------------------------------------------|
+    | callback_url | 是   | string          | 1~2048个字符，HTTPS地址 | -   | 事件回调地址。                                    |
+    | event_types | 否    | array of string | AGENT_REGISTERED/AGENT_UPDATED/AGENT_DEREGISTERED/AGENT_HEALTH_CHANGED | 全部类型 | 订阅的事件类型白名单。                                |
+    | filters     | 否    | reference       | -   | -   | 过滤条件，详细请参见[表23](#表23-订阅过滤条件)。              |
+    | secret      | 否    | string          | 1~256个字符 | -   | HMAC-SHA256验签密钥，建议提供；不提供则事件不签名。            |
+
+  <a id="表23-订阅过滤条件"></a>**表23** 订阅过滤条件
+
+    | 参数名称          | 是否必选 | 类型              | 描述           |
+    |---------------|------|-----------------|--------------|
+    | organizations | 否    | array of string | 按Agent组织过滤。  |
+    | tags          | 否    | array of string | 按Agent标签过滤。  |
+
+- 请求示例
+
+    ```json
+    {
+      "callback_url": "https://operator.example.com/registry-events",
+      "event_types": ["AGENT_REGISTERED", "AGENT_UPDATED", "AGENT_DEREGISTERED", "AGENT_HEALTH_CHANGED"],
+      "filters": {"organizations": ["acme"]},
+      "secret": "whsec-demo"
+    }
+    ```
+
+- 响应参数
+
+  <a id="表24-订阅对象"></a>**表24** 订阅对象
+
+    | 参数名称           | 类型     | 描述                                        |
+    |----------------|--------|---------------------------------------------|
+    | subscription_id | string | 订阅唯一标识，用于查询与删除。                             |
+    | callback_url    | string | 回调地址。                                       |
+    | event_types     | array  | 订阅的事件类型。                                    |
+    | filters         | object | 过滤条件。                                       |
+    | created_at      | string | 创建时间。                                       |
+
+- 响应样例
+
+    ```json
+    {
+      "subscription_id": "sub_6133a2d93b32459990bf",
+      "callback_url": "https://operator.example.com/registry-events",
+      "event_types": ["AGENT_REGISTERED", "AGENT_UPDATED"],
+      "filters": {"organizations": ["acme"], "tags": null},
+      "created_at": "2026-09-17T11:07:14.009321+00:00"
+    }
+    ```
+
+- 状态码
+
+  | 状态码 | 说明                     |
+  |--------|------------------------|
+  | 201 | 创建成功。                  |
+  | 422 | 请求参数非法（回调地址、事件类型等）。    |
+  | 429 | 创建失败，超过流控限制。           |
+  | 500 | 创建失败，服务内部错误。           |
+  | 503 | 变更广播功能未开启。             |
+
+## 查询订阅列表
+
+- 典型场景
+
+    管理员查看当前有效的变更订阅及其回调配置。
+
+- 功能描述
+
+    返回所有变更订阅列表。响应不包含secret。
+
+- 接口约束
+
+  - 仅当`broadcast.enabled=true`时可用，否则返回503。
+
+- 调用方法
+
+    GET
+
+- URI
+
+    */rest/v1/registry-center/subscriptions*
+
+- 请求参数
+
+    无。
+
+- 响应样例
+
+    ```json
+    {
+      "subscriptions": [
+        {
+          "subscription_id": "sub_6133a2d93b32459990bf",
+          "callback_url": "https://operator.example.com/registry-events",
+          "event_types": null,
+          "filters": {"organizations": null, "tags": null},
+          "created_at": "2026-09-17T11:07:14.009321+00:00"
+        }
+      ]
+    }
+    ```
+
+- 状态码
+
+  | 状态码 | 说明           |
+  |--------|--------------|
+  | 200 | 查询成功。        |
+  | 500 | 查询失败，服务内部错误。 |
+  | 503 | 变更广播功能未开启。   |
+
+## 删除订阅
+
+- 典型场景
+
+    订阅方不再需要接收变更通知时，通过该接口取消订阅。
+
+- 功能描述
+
+    按订阅ID删除变更订阅，删除后注册中心不再向该回调地址推送事件。
+
+- 接口约束
+
+  - 仅当`broadcast.enabled=true`时可用，否则返回503。
+
+- 调用方法
+
+    DELETE
+
+- URI
+
+    */rest/v1/registry-center/subscriptions/{subscription_id}*
+
+- 请求参数
+
+  <a id="表25-删除订阅路径参数"></a>**表25** 路径参数
+
+    | 参数名称            | 是否必选 | 类型     | 描述      |
+    |-----------------|------|--------|---------|
+    | subscription_id | 是   | string | 订阅唯一标识。 |
+
+- 响应样例
+
+    ```json
+    {
+      "subscription_id": "sub_6133a2d93b32459990bf",
+      "deleted": true
+    }
+    ```
+
+- 状态码
+
+  | 状态码 | 说明           |
+  |--------|--------------|
+  | 200 | 删除成功。        |
+  | 404 | 订阅不存在。       |
+  | 500 | 删除失败，服务内部错误。 |
+  | 503 | 变更广播功能未开启。   |
+
+## 变更对账查询
+
+- 典型场景
+
+    订阅方收到`SYNC_REQUIRED`摘要事件、怀疑漏事件或定期校验时，通过该接口按版本号增量拉取变更事件。
+
+- 功能描述
+
+    返回`registry_version`大于since的事件列表（按版本号升序），配合全量AgentCard查询可实现初始同步与漏事件补齐。
+
+- 接口约束
+
+  - 事件保留期由`broadcast.outbox.retention.days`配置（默认7天），超出保留期的事件无法拉取。
+  - 单页最大1000条。
+
+- 调用方法
+
+    GET
+
+- URI
+
+    */rest/v1/registry-center/changes*
+
+- 请求参数
+
+  <a id="表26-对账Query参数"></a>**表26** Query参数
+
+    | 参数名称  | 是否必选 | 类型 | 值域       | 默认值 | 描述                     |
+    |-------|------|----|------------|-----|------------------------|
+    | since | 否   | int | >=0        | 0   | 上次已知的registry_version。 |
+    | limit | 否   | int | 1~1000     | 100 | 单页最大事件数。               |
+
+- 响应参数
+
+  <a id="表27-变更事件对象"></a>**表27** 变更事件对象
+
+    | 参数名称             | 类型     | 描述                                        |
+    |------------------|--------|---------------------------------------------|
+    | event_id         | string | 事件唯一标识（UUID），订阅方用于幂等去重。                     |
+    | event_type       | string | 事件类型，枚举见[表22](#表22-订阅body参数)event_types说明。  |
+    | timestamp        | string | 事件产生时间（服务端时钟）。                              |
+    | registry_version | int    | 注册中心全局单调递增版本号。                              |
+    | data             | object | 事件负载：卡片事件含name/organization/agent_card/tags；健康事件含health_status/previous_health_status。 |
+    | has_more         | boolean | 是否还有下一页。                                    |
+    | next_since       | int     | 下一页拉取起点（当前页最后一条的registry_version）。           |
+
+- 响应样例
+
+    ```json
+    {
+      "changes": [
+        {
+          "event_id": "0198f6a2-7c1d-7cc2-9a3b-4f2e1d0c9b8a",
+          "event_type": "AGENT_REGISTERED",
+          "timestamp": "2026-09-17T12:00:00.123456+00:00",
+          "registry_version": 1,
+          "data": {"name": "DemoAgent", "organization": "TestOrg"}
+        }
+      ],
+      "has_more": false,
+      "next_since": 1
+    }
+    ```
+
+- 状态码
+
+  | 状态码 | 说明           |
+  |--------|--------------|
+  | 200 | 查询成功。        |
+  | 429 | 查询失败，超过流控限制。 |
+  | 500 | 查询失败，服务内部错误。 |

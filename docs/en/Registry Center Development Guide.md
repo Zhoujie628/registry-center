@@ -579,6 +579,47 @@ The Registry Center provides a CLI command-line tool for local management of Age
     - The CLI communicates with the service via Unix Domain Socket. UDS is not available on Windows, so internal CLI commands are limited.
     - Socket path (Linux): `run/registry-center/internal.sock`.
 
+## Agent Health Monitoring and Change Subscription Scenario
+
+### Scenario Overview
+
+The Registry Center supports Agent heartbeat detection and change broadcast: Agents periodically report liveness, and the Registry Center maintains health status (healthy/suspect/offline) based on the failure threshold. Registry data changes (registration, update, deregistration, health changes) are pushed to subscribers via webhooks in real time, with a version-based reconciliation API. Both capabilities are disabled by default and must be enabled in server.conf; once enabled, they are fully backward compatible with existing deployments.
+
+### Development Steps
+
+1. Enable the capabilities (etc/conf/server.conf)
+
+    ```properties
+    heartbeat.enabled=true
+    broadcast.enabled=true
+    ```
+
+2. Integrate heartbeat reporting into the Agent
+
+    The Agent reports at the period advertised in the heartbeat response, preferably with ±10% random jitter to avoid synchronized heartbeat storms. Heartbeat times are determined by the server-side receive time:
+
+    ```http
+    POST /rest/v1/registry-center/agent-cards/{organization}/{name}/heartbeat
+    ```
+
+    For API details, see the "Report Agent Heartbeat" section in the [Registry Center API Reference](./Registry%20Center%20API%20Reference.md#report-agent-heartbeat).
+
+3. Receive change notifications as a subscriber
+
+    First create a subscription to register the callback URL and signing secret. The callback endpoint must verify X-Registry-Signature (HMAC-SHA256) and the timestamp window before processing events. For API details, see the "Create Change Subscription" section in the [Registry Center API Reference](./Registry%20Center%20API%20Reference.md#create-change-subscription); for signature verification rules, see the "Change Broadcast Security" section in the [Registry Center Security Guide](./Registry%20Center%20Security%20Guide.md#change-broadcast-security).
+
+4. Reconcile as a subscriber
+
+    Periodically pull change events incrementally by registry_version to prevent missed events:
+
+    ```http
+    GET /rest/v1/registry-center/changes?since={last_version}&limit=100
+    ```
+
+    Notes:
+    - Administrators can monitor Agent health via `GET /rest/v1/registry-center/agents/health` with optional status filtering.
+    - Offline Agents are marked but not hidden by default; automatic hiding can be enabled via `heartbeat.hide.unhealthy.results=true`.
+
 ## Configuration Extension Scenario
 
 ### Use Case Overview
