@@ -64,3 +64,29 @@ TAG_MAX_LENGTH = "tag.max.length"
 
 OWNER_ISOLATION_ENABLED = str(get_conf().get("owner.isolation.enabled", "false")).lower() == 'true'
 OWNER_VALIDATION_MODE = get_conf().get("owner.validation.mode", "strict")
+
+# ---------- Heartbeat detection ----------
+# Keys use dot-separated names so REGISTRY_* env overrides map cleanly.
+HEARTBEAT_ENABLED = "heartbeat.enabled"
+HEARTBEAT_INTERVAL = "heartbeat.interval"
+HEARTBEAT_FAILURE_THRESHOLD = "heartbeat.failure.threshold"
+HEARTBEAT_GRACE_PERIOD = "heartbeat.grace.period"
+HEARTBEAT_SWEEP_INTERVAL = "heartbeat.sweep.interval"
+HEARTBEAT_OFFLINE_TTL = "heartbeat.offline.ttl"
+HEARTBEAT_HIDE_UNHEALTHY_RESULTS = "heartbeat.hide.unhealthy.results"
+FLOW_CTL_HEARTBEAT = "flowcontrol.ratelimit.heartbeat"
+FLOW_CTL_SUBSCRIPTION = "flowcontrol.ratelimit.subscription"
+FLOW_CTL_PARALLEL_HEARTBEAT = "flowcontrol.parallelism.heartbeat"
+FLOW_CTL_PARALLEL_SUBSCRIPTION = "flowcontrol.parallelism.subscription"
+
+# ---------- Change broadcast ----------
+BROADCAST_ENABLED = "broadcast.enabled"
+BROADCAST_DEBOUNCE_WINDOW = "broadcast.debounce.window"
+BROADCAST_MAX_EVENTS_PER_SECOND = "broadcast.max.events.per.second"
+BROADCAST_WEBHOOK_TIMEOUT = "broadcast.webhook.timeout"
+BROADCAST_WEBHOOK_MAX_RETRIES = "broadcast.webhook.max.retries"
+BROADCAST_WEBHOOK_BACKOFF_BASE = "broadcast.webhook.backoff.base"
+BROADCAST_WEBHOOK_BACKOFF_MAX = "broadcast.webhook.backoff.max"
+BROADCAST_OUTBOX_RETENTION_DAYS = "broadcast.outbox.retention.days"
+BROADCAST_ALLOW_HTTP_CALLBACKS = "broadcast.allow.http.callbacks"
+BROADCAST_CALLBACK_ALLOWLIST = "broadcast.callback.allowlist"

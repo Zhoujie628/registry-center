@@ -27,6 +27,8 @@ class SqlStorageBackend(StorageBackend):
 
     queries = None
     _integrity_error = Exception
+    # Parameter placeholder for dialect-agnostic helper queries (%s for psycopg2).
+    param_ph = "%s"
 
     # ---- connection management (subclass implements) ----
 

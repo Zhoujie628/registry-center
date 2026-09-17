@@ -26,6 +26,7 @@ class SQLiteStorage(SqlStorageBackend):
 
     queries = SQLiteQueries
     _integrity_error = sqlite3.IntegrityError
+    param_ph = "?"
 
     def __init__(self, conn: sqlite3.Connection):
         self._conn = conn
