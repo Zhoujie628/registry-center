@@ -34,6 +34,8 @@ from agent_registry.config import PERSISTENCE_FILE, PERSISTENCE_METADATA_FILE, U
 from agent_registry.persistence import StorageRegistry, StorageBackend
 from agent_registry.persistence.base import AgentRecord
 from agent_registry.prompts import build_agent_selection_prompt
+from agent_registry.broadcast import get_event_bus
+from agent_registry.broadcast.events import EventType
 from common.llm import get_llm_instance, get_embed_instance
 from common.util.app_config import get_root_path
 from common.vector_db.vector_db_client.config.vector_db_client_registry import get_or_create_vectordb_tool_instance
@@ -125,13 +127,16 @@ class RegistryCore:
                                  "organization": agent.provider.organization,
                                  "agent_card": entity_str, "status": initial_status, "owner": owner}
                 insert_data = {"collection_name": COLLECTION_NAME, "entity": insert_entity}
-                return self.vectordb.insert_entity(insert_data)
+                result = self.vectordb.insert_entity(insert_data)
             else:
                 result = self.storage.create(agent, owner=owner, status=initial_status)
                 if result:
                     logger.info(
                         f"Registered agent: {agent.name} (org={agent.provider.organization}, status={initial_status}, owner={owner})")
-                return result
+            if result:
+                self._publish_event(EventType.AGENT_REGISTERED, agent.name, agent.provider.organization,
+                                    card_data=MessageToDict(agent, preserving_proto_field_name=True))
+            return result
 
     def find_exact(self, name: Optional[str] = None, organization: Optional[str] = None,
                    use_vectordb: bool = USE_VECTORDB) -> List[AgentCard]:
@@ -204,7 +209,9 @@ class RegistryCore:
             else:
                 result = self.storage.update(name, organization, agent_data, owner=owner)
                 logger.info(f"Updated agent: {name}({organization}, owner={owner})")
-                return result
+            if result:
+                self._publish_event(EventType.AGENT_UPDATED, name, organization, card_data=agent_data)
+            return result
 
     def deregister(self, name: str, organization: str, use_vectordb: bool = USE_VECTORDB,
                    owner: Optional[str] = None) -> bool:
@@ -221,7 +228,10 @@ class RegistryCore:
             else:
                 result = self.storage.delete(name, organization, owner=owner)
                 logger.info(f"Deregistered agent: {name}({organization}, owner={owner})")
-                return result
+            if result:
+                self._remove_health_state(name, organization)
+                self._publish_event(EventType.AGENT_DEREGISTERED, name, organization)
+            return result
 
     def _select_agents_by_llm(self, task: str, agents_info: List[dict], top_n: int) -> list:
         """Use LLM to select the most relevant agents, returning list of (org, name) tuples."""
@@ -347,6 +357,28 @@ class RegistryCore:
     def _make_id(self, name: str, organization: str):
         return make_agent_id(name, organization)
 
+    def _publish_event(self, event_type: EventType, name: str, organization: str,
+                       card_data: Optional[Dict[str, Any]] = None) -> None:
+        """Publish a registry change event. Event failures never break mutations."""
+        try:
+            data = {
+                "name": name,
+                "organization": organization,
+                "tags": self.get_agent_tags(name, organization) or [],
+            }
+            if card_data is not None:
+                data["agent_card"] = card_data
+            get_event_bus().publish(event_type, data)
+        except Exception as e:
+            logger.error(f"Failed to publish registry event {event_type}: {e}")
+
+    def _remove_health_state(self, name: str, organization: str) -> None:
+        try:
+            from agent_registry.health import get_health_service
+            get_health_service().remove(name, organization)
+        except Exception as e:
+            logger.warning(f"Failed to clean health state for agent {name}({organization}): {e}")
+
     def find_by_key(self, name: str, organization: str) -> Optional[AgentCard]:
         """Search a single agent by exact name and organization. Delegates to get_by_key."""
         return self.get_by_key(name, organization)
@@ -368,7 +400,7 @@ class RegistryCore:
         tags = self.get_agent_tags(name, organization) or []
         created_at = self.get_created_at(name, organization) or ''
         updated_at = self.get_updated_at(name, organization) or ''
-        return {
+        metadata = {
             "agent_name": name,
             "organization": organization,
             "status": status,
@@ -376,6 +408,14 @@ class RegistryCore:
             "created_at": created_at,
             "updated_at": updated_at
         }
+        try:
+            from agent_registry.health import get_health_service
+            health_service = get_health_service()
+            if health_service.enabled:
+                metadata["health"] = health_service.metadata_health(name, organization)
+        except Exception as e:
+            logger.warning(f"Failed to enrich metadata with health status: {e}")
+        return metadata
 
     def get_created_at(self, name: str, organization: str) -> str:
         """Get agent created_at timestamp."""
@@ -392,7 +432,12 @@ class RegistryCore:
         with self._lock:
             if not self.storage:
                 return False
-            return self.storage.update_status(name, organization, new_status)
+            result = self.storage.update_status(name, organization, new_status)
+            if result:
+                record = self.storage.find_by_key(name, organization)
+                card_data = MessageToDict(record.agent_card, preserving_proto_field_name=True) if record else None
+                self._publish_event(EventType.AGENT_UPDATED, name, organization, card_data=card_data)
+            return result
 
     def get_agents_by_status(self, status: str) -> List[AgentCard]:
         """Get agents by status."""
