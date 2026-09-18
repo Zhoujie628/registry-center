@@ -4,20 +4,22 @@
 // SPDX-License-Identifier: Apache-2.0
 //
 //    Licensed under the Apache License, Version 2.0 (the "License"); you may
-//    not use this file except in compliance with the License. You may obtain
-//    a copy of the License at
+//    use this file except in compliance with the License. You may obtain a
+//    copy of the License at
 //
 //         http://www.apache.org/licenses/LICENSE-2.0
 //
 //    Unless required by applicable law or agreed to in writing, software
-//    distributed under the License is distributed on an "AS IS" BASIS, WITHOUT
-//    WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied. See the
-//    License for the specific language governing permissions and limitations
-//    under the License.
+//    distributed under the License is distributed on an "AS IS" BASIS,
+//    WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+//    See the License for the specific language governing permissions and
+//    limitations under the License.
 
 // Merged page: orchestration-center agent-library browse UI (cards + tabs +
 // search + RAW/structured detail). Calls the registry-center backend
-// (response.agentCards).
+// (response.agentCards). Also hosts the heartbeat monitor view, toggled from
+// the toolbar; agent cards and the table view show online/offline status
+// synced with the heartbeat detection backend.
 
 import { cloneElement, useCallback, useEffect, useMemo, useState } from 'react'
 import { createPortal } from 'react-dom'
@@ -129,61 +131,67 @@ const StatsBar = ({ agents, isDark }) => {
 
 // ── Table row view ──
 
-const renderTableRow = (agent, setSelectedAgent, setViewMode, themeColor, layerBadge, t) => (
-    <tr
-        key={agent.id}
-        onClick={() => {
-            setSelectedAgent(agent)
-            setViewMode('structured')
-        }}
-        className="cursor-pointer border-b border-zinc-100 dark:border-zinc-800 hover:bg-zinc-50 dark:hover:bg-zinc-800/50 transition-colors"
-    >
-        <td className="px-4 py-3">
-            <div className="flex items-center gap-3">
-                <div className={`p-2 rounded-lg text-white shadow-sm ${agent.layer === 'network' ? 'bg-emerald-500' : themeColor(agent.theme)}`}>
-                    {cloneElement(agent.icon, { size: 14 })}
-                </div>
-                <div className="leading-tight">
-                    <div className="text-sm font-black text-zinc-900 dark:text-white">{agent.id}</div>
-                    <div className="text-[11px] text-zinc-400 dark:text-zinc-500 truncate max-w-[280px]">
-                        {agent.description}
+const renderTableRow = (agent, setSelectedAgent, setViewMode, themeColor, layerBadge, t, healthOf) => {
+    const health = healthOf(agent.id, agent.provider?.organization)
+    return (
+        <tr
+            key={agent.id}
+            onClick={() => {
+                setSelectedAgent(agent)
+                setViewMode('structured')
+            }}
+            className="cursor-pointer border-b border-zinc-100 dark:border-zinc-800 hover:bg-zinc-50 dark:hover:bg-zinc-800/50 transition-colors"
+        >
+            <td className="px-4 py-3">
+                <div className="flex items-center gap-3">
+                    <div className={`p-2 rounded-lg text-white shadow-sm ${agent.layer === 'network' ? 'bg-emerald-500' : themeColor(agent.theme)}`}>
+                        {cloneElement(agent.icon, { size: 14 })}
+                    </div>
+                    <div className="leading-tight">
+                        <div className="text-sm font-black text-zinc-900 dark:text-white">{agent.id}</div>
+                        <div className="text-[11px] text-zinc-400 dark:text-zinc-500 truncate max-w-[280px]">
+                            {agent.description}
+                        </div>
                     </div>
                 </div>
-            </div>
-        </td>
-        <td className="px-4 py-3">
-            <span className={`text-xs font-black px-3 py-1 rounded-lg border uppercase ${layerBadge(agent.layer)}`}>
-                {agent.layer === 'network' ? 'Network' : 'Service'}
-            </span>
-        </td>
-        <td className="px-4 py-3 text-xs font-bold text-zinc-500 dark:text-zinc-400">
-            {agent.provider?.organization}
-        </td>
-        <td className="px-4 py-3">
-            <div className="flex flex-wrap gap-1 max-w-[220px]">
-                {(agent.skills || []).slice(0, 2).map((skill) => (
-                    <span
-                        key={skill.id}
-                        className="px-2 py-0.5 rounded-md text-[9px] font-bold bg-zinc-100 dark:bg-zinc-800 text-zinc-600 dark:text-zinc-400 border border-zinc-200 dark:border-zinc-700"
-                    >
-                        {skill.name}
-                    </span>
-                ))}
-                {(agent.skills || []).length > 2 && (
-                    <span className="px-1.5 py-0.5 rounded-md text-[9px] font-bold text-zinc-400 dark:text-zinc-500">
-                        +{agent.skills.length - 2}
-                    </span>
-                )}
-            </div>
-        </td>
-        <td className="px-4 py-3 text-xs font-mono font-bold text-zinc-500 dark:text-zinc-400">
-            v{agent.version}
-        </td>
-        <td className="px-4 py-3 text-[11px] font-bold text-zinc-400 dark:text-zinc-500">
-            {agent.skills?.length || 0} {t('registry.skills_count')}
-        </td>
-    </tr>
-)
+            </td>
+            <td className="px-4 py-3">
+                <span className={`text-xs font-black px-3 py-1 rounded-lg border uppercase ${layerBadge(agent.layer)}`}>
+                    {agent.layer === 'network' ? 'Network' : 'Service'}
+                </span>
+            </td>
+            <td className="px-4 py-3 text-xs font-bold text-zinc-500 dark:text-zinc-400">
+                {agent.provider?.organization}
+            </td>
+            <td className="px-4 py-3">
+                <div className="flex flex-wrap gap-1 max-w-[220px]">
+                    {(agent.skills || []).slice(0, 2).map((skill) => (
+                        <span
+                            key={skill.id}
+                            className="px-2 py-0.5 rounded-md text-[9px] font-bold bg-zinc-100 dark:bg-zinc-800 text-zinc-600 dark:text-zinc-400 border border-zinc-200 dark:border-zinc-700"
+                        >
+                            {skill.name}
+                        </span>
+                    ))}
+                    {(agent.skills || []).length > 2 && (
+                        <span className="px-1.5 py-0.5 rounded-md text-[9px] font-bold text-zinc-400 dark:text-zinc-500">
+                            +{agent.skills.length - 2}
+                        </span>
+                    )}
+                </div>
+            </td>
+            <td className="px-4 py-3 text-xs font-mono font-bold text-zinc-500 dark:text-zinc-400">
+                v{agent.version}
+            </td>
+            <td className="px-4 py-3 text-[11px] font-bold text-zinc-400 dark:text-zinc-500">
+                {agent.skills?.length || 0} {t('registry.skills_count')}
+            </td>
+            <td className="px-4 py-3">
+                {health && <StatusBadge status={health} pulse={health === 'suspect'} />}
+            </td>
+        </tr>
+    )
+}
 
 const AgentRegistry = ({ isDark, api }) => {
     const { t } = useTranslation()
@@ -193,8 +201,8 @@ const AgentRegistry = ({ isDark, api }) => {
     const [activeTab, setActiveTab] = useState('all')
     const [selectedAgent, setSelectedAgent] = useState(null)
     const [viewMode, setViewMode] = useState('structured')
-    const [view, setView] = useState('registry')
     const [listMode, setListMode] = useState('cards')
+    const [view, setView] = useState('registry')
 
     const [toast, setToast] = useState(null)
 
@@ -354,102 +362,6 @@ const AgentRegistry = ({ isDark, api }) => {
             ? 'bg-emerald-100 dark:bg-emerald-900/30 text-emerald-700 dark:text-emerald-400 border-emerald-200 dark:border-emerald-800'
             : 'bg-blue-100 dark:bg-blue-900/30 text-blue-700 dark:text-blue-400 border-blue-200 dark:border-blue-800'
 
-    const renderCard = (agent) => {
-        const health = healthOf(agent.id, agent.provider?.organization)
-        const healthStyle = health ? (STATUS_STYLES[health] || STATUS_STYLES.unknown) : null
-        return (
-        <div
-            key={agent.id}
-            onClick={() => {
-                setSelectedAgent(agent)
-                setViewMode('structured')
-            }}
-            className={`group relative p-6 rounded-2xl border cursor-pointer transition-all duration-300 bg-white dark:bg-zinc-900 border-zinc-100 dark:border-zinc-800 ${themeBorder(
-                agent.theme,
-            )} hover:shadow-lg hover:-translate-y-1 animate-in fade-in duration-300`}
-        >
-            <div className="flex items-start justify-between mb-4">
-                <div
-                    className={`p-3 rounded-xl text-white shadow-lg ${
-                        agent.layer === 'network' ? 'bg-emerald-500' : themeColor(agent.theme)
-                    }`}
-                >
-                    {cloneElement(agent.icon, { size: 22 })}
-                </div>
-                <div className="flex items-center gap-2">
-                    {health && healthStyle ? (
-                        <span
-                            className="flex items-center gap-1.5"
-                            title={t(`heartbeat.status_${health}`)}
-                        >
-                            <span
-                                className={`w-2 h-2 rounded-full ${healthStyle.dot} ${healthStyle.glow} ${
-                                    health === 'suspect' ? 'animate-pulse-soft' : ''
-                                }`}
-                            />
-                            <span className="text-sm font-bold text-zinc-500 dark:text-zinc-400">
-                                {health === 'offline'
-                                    ? t('heartbeat.status_offline')
-                                    : t('heartbeat.status_online')}
-                            </span>
-                        </span>
-                    ) : (
-                        <div className="w-2 h-2 rounded-full bg-emerald-500 shadow-[0_0_6px_#10b981]" />
-                    )}
-                    <span className="text-sm font-black text-zinc-400 dark:text-zinc-500 uppercase">
-                        V{agent.version}
-                    </span>
-                </div>
-            </div>
-
-            <h3 className="text-sm font-black text-zinc-900 dark:text-white mb-2 leading-tight truncate">
-                {agent.id}
-            </h3>
-            <p className="text-[11px] text-zinc-500 dark:text-zinc-400 line-clamp-2 mb-4 leading-relaxed min-h-[2.5em]">
-                {agent.description}
-            </p>
-
-            <div className="flex flex-wrap gap-1.5 mb-4">
-                {(agent.skills || []).slice(0, 3).map((skill) => (
-                    <span
-                        key={skill.id}
-                        className="px-2 py-0.5 rounded-md text-[9px] font-bold bg-zinc-100 dark:bg-zinc-800 text-zinc-600 dark:text-zinc-400 border border-zinc-200 dark:border-zinc-700"
-                    >
-                        {skill.name}
-                    </span>
-                ))}
-                {(agent.skills || []).length > 3 && (
-                    <span className="px-2 py-0.5 rounded-md text-[9px] font-bold text-zinc-400 dark:text-zinc-500">
-                        +{agent.skills.length - 3}
-                    </span>
-                )}
-            </div>
-
-            <div className="flex items-center justify-between pt-3 border-t border-zinc-100 dark:border-zinc-800">
-                <div className="flex items-center gap-2">
-                    <span
-                        className={`text-xs font-black px-4 py-1 rounded-lg border uppercase ${layerBadge(agent.layer)}`}
-                    >
-                        {agent.layer === 'network' ? 'Network' : 'Service'}
-                    </span>
-                    <span
-                        className={`text-xs font-black px-3 py-1 rounded-lg border ${
-                            agent.layer === 'network'
-                                ? 'bg-emerald-50 dark:bg-emerald-900/20 text-emerald-600 dark:text-emerald-400 border-emerald-200 dark:border-emerald-800'
-                                : 'bg-blue-50 dark:bg-blue-900/20 text-blue-600 dark:text-blue-400 border-blue-200 dark:border-blue-800'
-                        }`}
-                    >
-                        {agent.provider?.organization}
-                    </span>
-                </div>
-                <span className="text-[10px] font-bold text-zinc-400 dark:text-zinc-500">
-                    {agent.skills?.length || 0} {t('registry.skills_count')}
-                </span>
-            </div>
-        </div>
-        )
-    }
-
     const viewToggle = (
         <div className="flex items-center gap-1 p-1 rounded-xl bg-zinc-100 dark:bg-zinc-800/60 border border-zinc-200 dark:border-zinc-700">
             <button
@@ -477,6 +389,102 @@ const AgentRegistry = ({ isDark, api }) => {
         </div>
     )
 
+    const renderCard = (agent) => {
+        const health = healthOf(agent.id, agent.provider?.organization)
+        const healthStyle = health ? (STATUS_STYLES[health] || STATUS_STYLES.unknown) : null
+        return (
+            <div
+                key={agent.id}
+                onClick={() => {
+                    setSelectedAgent(agent)
+                    setViewMode('structured')
+                }}
+                className={`group relative p-6 rounded-2xl border cursor-pointer transition-all duration-300 bg-white dark:bg-zinc-900 border-zinc-100 dark:border-zinc-800 ${themeBorder(
+                    agent.theme,
+                )} hover:shadow-lg hover:-translate-y-1 animate-in fade-in duration-300`}
+            >
+                <div className="flex items-start justify-between mb-4">
+                    <div
+                        className={`p-3 rounded-xl text-white shadow-lg ${
+                            agent.layer === 'network' ? 'bg-emerald-500' : themeColor(agent.theme)
+                        }`}
+                    >
+                        {cloneElement(agent.icon, { size: 22 })}
+                    </div>
+                    <div className="flex items-center gap-2">
+                        {health && healthStyle ? (
+                            <span
+                                className="flex items-center gap-1.5"
+                                title={t(`heartbeat.status_${health}`)}
+                            >
+                                <span
+                                    className={`w-2 h-2 rounded-full ${healthStyle.dot} ${healthStyle.glow} ${
+                                        health === 'suspect' ? 'animate-pulse-soft' : ''
+                                    }`}
+                                />
+                                <span className="text-sm font-bold text-zinc-500 dark:text-zinc-400">
+                                    {health === 'offline'
+                                        ? t('heartbeat.status_offline')
+                                        : t('heartbeat.status_online')}
+                                </span>
+                            </span>
+                        ) : (
+                            <div className="w-2 h-2 rounded-full bg-emerald-500 shadow-[0_0_6px_#10b981]" />
+                        )}
+                        <span className="text-sm font-black text-zinc-400 dark:text-zinc-500 uppercase">
+                            V{agent.version}
+                        </span>
+                    </div>
+                </div>
+
+                <h3 className="text-sm font-black text-zinc-900 dark:text-white mb-2 leading-tight truncate">
+                    {agent.id}
+                </h3>
+                <p className="text-[11px] text-zinc-500 dark:text-zinc-400 line-clamp-2 mb-4 leading-relaxed min-h-[2.5em]">
+                    {agent.description}
+                </p>
+
+                <div className="flex flex-wrap gap-1.5 mb-4">
+                    {(agent.skills || []).slice(0, 3).map((skill) => (
+                        <span
+                            key={skill.id}
+                            className="px-2 py-0.5 rounded-md text-[9px] font-bold bg-zinc-100 dark:bg-zinc-800 text-zinc-600 dark:text-zinc-400 border border-zinc-200 dark:border-zinc-700"
+                        >
+                            {skill.name}
+                        </span>
+                    ))}
+                    {(agent.skills || []).length > 3 && (
+                        <span className="px-2 py-0.5 rounded-md text-[9px] font-bold text-zinc-400 dark:text-zinc-500">
+                            +{agent.skills.length - 3}
+                        </span>
+                    )}
+                </div>
+
+                <div className="flex items-center justify-between pt-3 border-t border-zinc-100 dark:border-zinc-800">
+                    <div className="flex items-center gap-2">
+                        <span
+                            className={`text-xs font-black px-4 py-1 rounded-lg border uppercase ${layerBadge(agent.layer)}`}
+                        >
+                            {agent.layer === 'network' ? 'Network' : 'Service'}
+                        </span>
+                        <span
+                            className={`text-xs font-black px-3 py-1 rounded-lg border ${
+                                agent.layer === 'network'
+                                    ? 'bg-emerald-50 dark:bg-emerald-900/20 text-emerald-600 dark:text-emerald-400 border-emerald-200 dark:border-emerald-800'
+                                    : 'bg-blue-50 dark:bg-blue-900/20 text-blue-600 dark:text-blue-400 border-blue-200 dark:border-blue-800'
+                            }`}
+                        >
+                            {agent.provider?.organization}
+                        </span>
+                    </div>
+                    <span className="text-[10px] font-bold text-zinc-400 dark:text-zinc-500">
+                        {agent.skills?.length || 0} {t('registry.skills_count')}
+                    </span>
+                </div>
+            </div>
+        )
+    }
+
     return (
         <div className="h-full p-6 flex flex-col w-full transition-all animate-in fade-in duration-500 overflow-hidden font-sans">
             {view === 'heartbeat' ? (
@@ -490,225 +498,169 @@ const AgentRegistry = ({ isDark, api }) => {
                 </>
             ) : (
                 <>
-                    <div className="shrink-0 flex items-center justify-between mb-6 px-2">
+                    {/* 1. Stats cards on top */}
+                    {!loading && <StatsBar agents={agents} isDark={isDark} />}
+
+                    {/* 2. Search + view toggle row */}
+                    <div className="shrink-0 flex items-center justify-between mb-4">
+                        <div className="relative w-72">
+                            <input
+                                type="text"
+                                placeholder={t('registry.search_placeholder')}
+                                className="w-full pl-10 pr-4 py-2.5 bg-white dark:bg-zinc-900 border border-zinc-200 dark:border-zinc-700 rounded-xl text-sm font-bold focus:ring-2 focus:ring-blue-500/20 focus:border-blue-400 outline-none transition-all dark:text-white"
+                                onChange={(e) => setSearchTerm(e.target.value)}
+                                value={searchTerm}
+                            />
+                            <Search className="absolute left-3.5 top-3 text-zinc-400" size={14} />
+                        </div>
                         <div className="flex items-center gap-3">
-                            <div className="relative w-72">
-                                <input
-                                    type="text"
-                                    placeholder={t('registry.search_placeholder')}
-                                    className="w-full pl-10 pr-4 py-2.5 bg-white dark:bg-zinc-900 border border-zinc-200 dark:border-zinc-700 rounded-xl text-sm font-bold focus:ring-2 focus:ring-blue-500/20 focus:border-blue-400 outline-none transition-all dark:text-white"
-                                    onChange={(e) => setSearchTerm(e.target.value)}
-                                    value={searchTerm}
-                                />
-                                <Search className="absolute left-3.5 top-3 text-zinc-400" size={14} />
+                            <div className="flex items-center gap-1 bg-zinc-100 dark:bg-zinc-800 p-1 rounded-xl border border-zinc-200 dark:border-zinc-700">
+                                <button
+                                    onClick={() => setListMode('cards')}
+                                    title={t('registry.view_cards')}
+                                    className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-bold transition-all ${listMode === 'cards' ? 'bg-white dark:bg-zinc-700 text-zinc-900 dark:text-white shadow-sm' : 'text-zinc-400 hover:text-zinc-600 dark:hover:text-zinc-300'}`}
+                                >
+                                    <LayoutGrid size={14} />
+                                    {t('registry.view_cards_btn')}
+                                </button>
+                                <button
+                                    onClick={() => setListMode('table')}
+                                    title={t('registry.view_table')}
+                                    className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-bold transition-all ${listMode === 'table' ? 'bg-white dark:bg-zinc-700 text-zinc-900 dark:text-white shadow-sm' : 'text-zinc-400 hover:text-zinc-600 dark:hover:text-zinc-300'}`}
+                                >
+                                    <List size={14} />
+                                    {t('registry.view_table_btn')}
+                                </button>
                             </div>
-                        </div>
-                        {viewToggle}
-                    </div>
-            {/* 1. Stats cards on top */}
-            {!loading && <StatsBar agents={agents} isDark={isDark} />}
-
-            {/* 2. Search + view toggle row */}
-            <div className="shrink-0 flex items-center justify-between mb-4">
-                <div className="relative w-72">
-                    <input
-                        type="text"
-                        placeholder={t('registry.search_placeholder')}
-                        className="w-full pl-10 pr-4 py-2.5 bg-white dark:bg-zinc-900 border border-zinc-200 dark:border-zinc-700 rounded-xl text-sm font-bold focus:ring-2 focus:ring-blue-500/20 focus:border-blue-400 outline-none transition-all dark:text-white"
-                        onChange={(e) => setSearchTerm(e.target.value)}
-                        value={searchTerm}
-                    />
-                    <Search className="absolute left-3.5 top-3 text-zinc-400" size={14} />
-                </div>
-                <div className="flex items-center gap-1 bg-zinc-100 dark:bg-zinc-800 p-1 rounded-xl border border-zinc-200 dark:border-zinc-700">
-                    <button
-                        onClick={() => setListMode('cards')}
-                        title={t('registry.view_cards')}
-                        className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-bold transition-all ${listMode === 'cards' ? 'bg-white dark:bg-zinc-700 text-zinc-900 dark:text-white shadow-sm' : 'text-zinc-400 hover:text-zinc-600 dark:hover:text-zinc-300'}`}
-                    >
-                        <LayoutGrid size={14} />
-                        {t('registry.view_cards_btn')}
-                    </button>
-                    <button
-                        onClick={() => setListMode('table')}
-                        title={t('registry.view_table')}
-                        className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-bold transition-all ${listMode === 'table' ? 'bg-white dark:bg-zinc-700 text-zinc-900 dark:text-white shadow-sm' : 'text-zinc-400 hover:text-zinc-600 dark:hover:text-zinc-300'}`}
-                    >
-                        <List size={14} />
-                        {t('registry.view_table_btn')}
-                    </button>
-                </div>
-            </div>
-
-            {/* 3. Tabs */}
-            <div className="shrink-0 flex items-center gap-1 mb-6 px-2">
-                {TABS.map((tab) => (
-                    <button
-                        key={tab}
-                        onClick={() => setActiveTab(tab)}
-                        className={`flex items-center gap-2 px-5 py-2.5 rounded-xl text-xs font-black uppercase tracking-wide transition-all duration-300 ${
-                            activeTab === tab
-                                ? 'bg-zinc-900 dark:bg-white text-white dark:text-zinc-900 shadow-md'
-                                : 'text-zinc-400 dark:text-zinc-500 hover:text-zinc-600 dark:hover:text-zinc-300 hover:bg-zinc-100 dark:hover:bg-zinc-800'
-                        }`}
-                    >
-                        {tab === 'all' && <Layers size={14} />}
-                        {tab === 'service' && <Radio size={14} />}
-                        {tab === 'network' && <Network size={14} />}
-                        {tab === 'vendor' && <Globe size={14} />}
-                        {t(`registry.tab_${tab}`)}
-                        <span
-                            className={`px-1.5 py-0.5 rounded-md text-[9px] font-black ${
-                                activeTab === tab ? 'bg-white/20 dark:bg-zinc-900/20' : 'bg-zinc-100 dark:bg-zinc-800'
-                            }`}
-                        >
-                            {tabCounts[tab]}
-                        </span>
-                    </button>
-                ))}
-            </div>
-
-            {/* Agent list — cards or table */}
-            <div className="flex-1 overflow-y-auto custom-scrollbar min-h-0 px-2">
-                {loading ? (
-                    <div className="h-full flex items-center justify-center">
-                        <div className="flex flex-col items-center gap-3 text-zinc-400">
-                            <div className="w-8 h-8 border-2 border-zinc-300 dark:border-zinc-600 border-t-blue-500 rounded-full animate-spin" />
-                            <span className="text-sm font-bold uppercase tracking-wider">
-                                {t('registry.synchronizing')}
-                            </span>
+                            {viewToggle}
                         </div>
                     </div>
-                ) : listMode === 'table' ? (
-                    /* ── Table view (applies to all tabs) ── */
-                    <div className="rounded-2xl border border-zinc-200 dark:border-zinc-800 bg-white dark:bg-zinc-900 overflow-hidden pb-8">
-                        <div className="overflow-x-auto">
-                            <table className="w-full border-collapse text-sm">
-                                <thead>
-                                    <tr className="bg-zinc-50 dark:bg-zinc-800/50">
-                                        {[
-                                            t('registry.col_name'),
-                                            t('registry.col_layer'),
-                                            t('registry.col_org'),
-                                            t('registry.col_skills'),
-                                            t('registry.col_version'),
-                                            t('registry.col_skills_count'),
-                                        ].map((h) => (
-                                            <th
-                                                key={h}
-                                                className="px-4 py-3 text-left text-[11px] font-black uppercase tracking-wider text-zinc-400 dark:text-zinc-500 border-b border-zinc-200 dark:border-zinc-800"
-                                            >
-                                                {h}
-                                            </th>
-                                        ))}
-                                    </tr>
-                                </thead>
-                                <tbody>
-                                    {(activeTab === 'vendor'
-                                        ? Object.values(vendorGroups).flat()
-                                        : filteredAgents
-                                    ).map((agent) =>
-                                        renderTableRow(agent, setSelectedAgent, setViewMode, themeColor, layerBadge, t),
-                                    )}
-                                    {(activeTab === 'vendor'
-                                        ? Object.values(vendorGroups).flat()
-                                        : filteredAgents
-                                    ).length === 0 && (
-                                        <tr>
-                                            <td colSpan={6} className="py-16 text-center text-zinc-400 text-sm font-bold">
-                                                {t('registry.no_agents')}
-                                            </td>
-                                        </tr>
-                                    )}
-                                </tbody>
-                            </table>
-                        </div>
-                    </div>
-                ) : activeTab === 'vendor' ? (
-                    <div className="space-y-8 pb-8">
-                        {Object.entries(vendorGroups).map(([org, orgAgents]) => (
-                            <div key={org}>
-                                <div className="flex items-center gap-3 mb-4">
-                                    <div className="p-2 rounded-lg bg-zinc-100 dark:bg-zinc-800">
-                                        <Globe size={16} className="text-zinc-500" />
-                                    </div>
-                                    <h2 className="text-sm font-black text-zinc-700 dark:text-zinc-300 uppercase">
-                                        {org}
-                                    </h2>
-                                    <span className="text-[10px] font-bold text-zinc-400 bg-zinc-100 dark:bg-zinc-800 px-2 py-0.5 rounded-full">
-                                        {orgAgents.length} {t('registry.units')}
-                                    </span>
-                                </div>
-                                <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-4">
-                                    {orgAgents.map(renderCard)}
-                                </div>
-                            </div>
-                        ))}
-                        {Object.keys(vendorGroups).length === 0 && (
-                            <div className="h-64 flex items-center justify-center text-zinc-400 text-sm font-bold">
-                                {t('registry.no_agents')}
-                            </div>
-                        )}
-                    </div>
-                ) : (
-                    <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-4 pb-8">
-                        {filteredAgents.map(renderCard)}
-                        {filteredAgents.length === 0 && (
-                            <div className="col-span-full h-64 flex items-center justify-center text-zinc-400 text-sm font-bold">
-                                {t('registry.no_agents')}
-                            </div>
-                        )}
-                    </div>
-                )}
-            </div>
 
-            {selectedAgent && (
-                <div className="fixed inset-0 z-[100] flex items-center justify-center p-6 bg-black/40 dark:bg-black/60 backdrop-blur-sm animate-in fade-in duration-200">
-                    <div className="bg-white dark:bg-zinc-950 w-full max-w-5xl h-[85vh] rounded-[2rem] shadow-2xl border border-zinc-200 dark:border-zinc-800 flex flex-col overflow-hidden animate-in zoom-in-95 duration-300">
-                        <div className="p-5 border-b border-zinc-100 dark:border-zinc-800 flex justify-between items-center bg-zinc-50/50 dark:bg-zinc-900/50 shrink-0">
-                            <div className="flex items-center gap-4">
-                                <div
-                                    className={`p-3 rounded-xl text-white shadow-lg ${
-                                        selectedAgent.layer === 'network'
-                                            ? 'bg-emerald-500'
-                                            : themeColor(selectedAgent.theme)
+                    {/* 3. Tabs */}
+                    <div className="shrink-0 flex items-center gap-1 mb-6 px-2">
+                        {TABS.map((tab) => (
+                            <button
+                                key={tab}
+                                onClick={() => setActiveTab(tab)}
+                                className={`flex items-center gap-2 px-5 py-2.5 rounded-xl text-xs font-black uppercase tracking-wide transition-all duration-300 ${
+                                    activeTab === tab
+                                        ? 'bg-zinc-900 dark:bg-white text-white dark:text-zinc-900 shadow-md'
+                                        : 'text-zinc-400 dark:text-zinc-500 hover:text-zinc-600 dark:hover:text-zinc-300 hover:bg-zinc-100 dark:hover:bg-zinc-800'
+                                }`}
+                            >
+                                {tab === 'all' && <Layers size={14} />}
+                                {tab === 'service' && <Radio size={14} />}
+                                {tab === 'network' && <Network size={14} />}
+                                {tab === 'vendor' && <Globe size={14} />}
+                                {t(`registry.tab_${tab}`)}
+                                <span
+                                    className={`px-1.5 py-0.5 rounded-md text-[9px] font-black ${
+                                        activeTab === tab ? 'bg-white/20 dark:bg-zinc-900/20' : 'bg-zinc-100 dark:bg-zinc-800'
                                     }`}
                                 >
-                                    {cloneElement(selectedAgent.icon, { size: 24 })}
+                                    {tabCounts[tab]}
+                                </span>
+                            </button>
+                        ))}
+                    </div>
+
+                    {/* Agent list — cards or table */}
+                    <div className="flex-1 overflow-y-auto custom-scrollbar min-h-0 px-2">
+                        {loading ? (
+                            <div className="h-full flex items-center justify-center">
+                                <div className="flex flex-col items-center gap-3 text-zinc-400">
+                                    <div className="w-8 h-8 border-2 border-zinc-300 dark:border-zinc-600 border-t-blue-500 rounded-full animate-spin" />
+                                    <span className="text-sm font-bold uppercase tracking-wider">
+                                        {t('registry.synchronizing')}
+                                    </span>
                                 </div>
-                                <div>
-                                    <h2 className="text-lg font-black dark:text-white leading-none">
-                                        {selectedAgent.id}
-                                    </h2>
-                                    <div className="flex items-center gap-2 mt-1">
-                                        <span className="text-sm font-bold text-zinc-400 uppercase">
-                                            {selectedAgent.provider?.organization}
-                                        </span>
-                                        <span className="w-1 h-1 rounded-full bg-zinc-300" />
-                                        <span className="text-sm font-bold text-zinc-400">
-                                            V{selectedAgent.version}
-                                        </span>
-                                        <span className="w-1 h-1 rounded-full bg-zinc-300" />
-                                        <span className="text-sm font-bold text-zinc-400">
-                                            {selectedAgent.skills?.length} {t('registry.skills_count')}
-                                        </span>
-                                        {healthOf(selectedAgent.id, selectedAgent.provider?.organization) && (
-                                            <>
-                                                <span className="w-1 h-1 rounded-full bg-zinc-300" />
-                                                <StatusBadge
-                                                    status={healthOf(
-                                                        selectedAgent.id,
-                                                        selectedAgent.provider?.organization,
-                                                    )}
-                                                    pulse={
-                                                        healthOf(
-                                                            selectedAgent.id,
-                                                            selectedAgent.provider?.organization,
-                                                        ) === 'suspect'
-                                                    }
-                                                />
-                                            </>
-                                        )}
+                            </div>
+                        ) : listMode === 'table' ? (
+                            /* ── Table view (applies to all tabs) ── */
+                            <div className="rounded-2xl border border-zinc-200 dark:border-zinc-800 bg-white dark:bg-zinc-900 overflow-hidden pb-8">
+                                <div className="overflow-x-auto">
+                                    <table className="w-full border-collapse text-sm">
+                                        <thead>
+                                            <tr className="bg-zinc-50 dark:bg-zinc-800/50">
+                                                {[
+                                                    t('registry.col_name'),
+                                                    t('registry.col_layer'),
+                                                    t('registry.col_org'),
+                                                    t('registry.col_skills'),
+                                                    t('registry.col_version'),
+                                                    t('registry.col_skills_count'),
+                                                    t('heartbeat.col_status'),
+                                                ].map((h) => (
+                                                    <th
+                                                        key={h}
+                                                        className="px-4 py-3 text-left text-[11px] font-black uppercase tracking-wider text-zinc-400 dark:text-zinc-500 border-b border-zinc-200 dark:border-zinc-800"
+                                                    >
+                                                        {h}
+                                                    </th>
+                                                ))}
+                                            </tr>
+                                        </thead>
+                                        <tbody>
+                                            {(activeTab === 'vendor'
+                                                ? Object.values(vendorGroups).flat()
+                                                : filteredAgents
+                                            ).map((agent) =>
+                                                renderTableRow(agent, setSelectedAgent, setViewMode, themeColor, layerBadge, t, healthOf),
+                                            )}
+                                            {(activeTab === 'vendor'
+                                                ? Object.values(vendorGroups).flat()
+                                                : filteredAgents
+                                            ).length === 0 && (
+                                                <tr>
+                                                    <td colSpan={7} className="py-16 text-center text-zinc-400 text-sm font-bold">
+                                                        {t('registry.no_agents')}
+                                                    </td>
+                                                </tr>
+                                            )}
+                                        </tbody>
+                                    </table>
+                                </div>
+                            </div>
+                        ) : activeTab === 'vendor' ? (
+                            <div className="space-y-8 pb-8">
+                                {Object.entries(vendorGroups).map(([org, orgAgents]) => (
+                                    <div key={org}>
+                                        <div className="flex items-center gap-3 mb-4">
+                                            <div className="p-2 rounded-lg bg-zinc-100 dark:bg-zinc-800">
+                                                <Globe size={16} className="text-zinc-500" />
+                                            </div>
+                                            <h2 className="text-sm font-black text-zinc-700 dark:text-zinc-300 uppercase">
+                                                {org}
+                                            </h2>
+                                            <span className="text-[10px] font-bold text-zinc-400 bg-zinc-100 dark:bg-zinc-800 px-2 py-0.5 rounded-full">
+                                                {orgAgents.length} {t('registry.units')}
+                                            </span>
+                                        </div>
+                                        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-4">
+                                            {orgAgents.map(renderCard)}
+                                        </div>
+                                    </div>
+                                ))}
+                                {Object.keys(vendorGroups).length === 0 && (
+                                    <div className="h-64 flex items-center justify-center text-zinc-400 text-sm font-bold">
+                                        {t('registry.no_agents')}
+                                    </div>
+                                )}
+                            </div>
+                        ) : (
+                            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-4 pb-8">
+                                {filteredAgents.map(renderCard)}
+                                {filteredAgents.length === 0 && (
+                                    <div className="col-span-full h-64 flex items-center justify-center text-zinc-400 text-sm font-bold">
+                                        {t('registry.no_agents')}
+                                    </div>
+                                )}
+                            </div>
+                        )}
+                    </div>
+                </>
+            )}
+
             {/* Detail drawer — portaled to body so it renders ABOVE the Portal shell
                 (the plugin container sits inside an overflow-hidden/relative <main>,
                 which would otherwise clip/stack beneath the Portal header). */}
@@ -759,6 +711,23 @@ const AgentRegistry = ({ isDark, api }) => {
                                             <span className="text-[10px] font-bold text-zinc-400">
                                                 {selectedAgent.skills?.length} {t('registry.skills_count')}
                                             </span>
+                                            {healthOf(selectedAgent.id, selectedAgent.provider?.organization) && (
+                                                <>
+                                                    <span className="w-1 h-1 rounded-full bg-zinc-300" />
+                                                    <StatusBadge
+                                                        status={healthOf(
+                                                            selectedAgent.id,
+                                                            selectedAgent.provider?.organization,
+                                                        )}
+                                                        pulse={
+                                                            healthOf(
+                                                                selectedAgent.id,
+                                                                selectedAgent.provider?.organization,
+                                                            ) === 'suspect'
+                                                        }
+                                                    />
+                                                </>
+                                            )}
                                         </div>
                                     </div>
                                 </div>
@@ -822,8 +791,6 @@ const AgentRegistry = ({ isDark, api }) => {
                     document.body,
                 )}
             </AnimatePresence>
-                </>
-            )}
         </div>
     )
 }
