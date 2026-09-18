@@ -43,7 +43,10 @@ class HealthService:
 
     def record_heartbeat(self, name: str, organization: str) -> Tuple[Optional[HealthStatus], HealthState]:
         received_at = datetime.now(timezone.utc)
-        return self.store.record_heartbeat(name, organization, received_at)
+        previous, state = self.store.record_heartbeat(name, organization, received_at)
+        if previous is not None and previous != state.status:
+            self.store.append_history(name, organization, previous, state.status, received_at)
+        return previous, state
 
     def get(self, name: str, organization: str) -> Optional[HealthState]:
         return self.store.get(name, organization)
@@ -63,7 +66,26 @@ class HealthService:
 
     def update_status(self, name: str, organization: str,
                       new_status: HealthStatus, changed_at: datetime) -> bool:
+        current = self.store.get(name, organization)
+        if current is not None and current.status != new_status:
+            self.store.append_history(name, organization, current.status, new_status, changed_at)
         return self.store.update_status(name, organization, new_status, changed_at)
+
+    def history(self, name: Optional[str] = None, organization: Optional[str] = None,
+                limit: int = 50) -> List[dict]:
+        """Recent health status transitions, newest first."""
+        return self.store.list_history(name, organization, limit)
+
+    def detection_config(self) -> dict:
+        """Effective detection parameters (served to frontend dashboards)."""
+        return {
+            "enabled": self.enabled,
+            "interval": self.interval,
+            "failure_threshold": self.failure_threshold,
+            "grace_period": self.grace_period,
+            "sweep_interval": self.sweep_interval,
+            "offline_ttl": self.offline_ttl,
+        }
 
     def remove(self, name: str, organization: str) -> None:
         self.store.remove(name, organization)

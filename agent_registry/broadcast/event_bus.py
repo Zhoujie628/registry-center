@@ -15,7 +15,7 @@ reconcile through the /changes endpoint.
 
 import asyncio
 import queue
-from typing import Optional
+from typing import List, Optional
 
 from loguru import logger
 
@@ -30,14 +30,33 @@ class EventBus:
         self._queue: "queue.Queue[RegistryEvent]" = queue.Queue()
         self._dispatcher = None
         self._consumer_task: Optional[asyncio.Task] = None
+        self._listeners: List = []
 
     def attach_dispatcher(self, dispatcher) -> None:
         self._dispatcher = dispatcher
+
+    def add_listener(self, listener) -> None:
+        """Register a synchronous callback invoked with every published event.
+
+        Used by in-process consumers (e.g. the SSE health stream endpoint).
+        Listener exceptions never affect publishing.
+        """
+        if listener not in self._listeners:
+            self._listeners.append(listener)
+
+    def remove_listener(self, listener) -> None:
+        if listener in self._listeners:
+            self._listeners.remove(listener)
 
     def publish(self, event_type: EventType, data: dict) -> RegistryEvent:
         event = self._outbox.append(build_event(event_type, data, registry_version=0))
         if self._dispatch_enabled and self._dispatcher is not None:
             self._queue.put_nowait(event)
+        for listener in list(self._listeners):
+            try:
+                listener(event)
+            except Exception as e:
+                logger.error(f"Event listener failed on {event.event_id}: {e}")
         return event
 
     async def run_consumer(self, poll_interval: float = 0.05):

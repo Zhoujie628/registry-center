@@ -443,10 +443,136 @@ class TestAdminHealthEndpoint:
         client = TestClient(app)
         response = client.get("/rest/v1/registry-center/agents/health")
         assert response.status_code == 200
-        agents = response.json()["agents"]
+        body = response.json()
+        agents = body["agents"]
         assert len(agents) == 1
         assert agents[0]["health_status"] == "healthy"
+        assert body["config"]["enabled"] is True
+        assert body["config"]["interval"] == 30
+        assert body["config"]["failure_threshold"] == 3
+        assert body["config"]["grace_period"] == 10
 
         filtered = client.get("/rest/v1/registry-center/agents/health",
                               params={"status": "offline"})
         assert filtered.json()["agents"] == []
+
+
+class TestHealthHistory:
+    def test_service_records_transitions(self):
+        service = HealthService(MemoryHeartbeatStore(), dict(HEALTH_CONFIG))
+        service.record_heartbeat("A1", "org1")
+        service.update_status("A1", "org1", HealthStatus.SUSPECT, T0)
+        service.update_status("A1", "org1", HealthStatus.OFFLINE, T0 + timedelta(seconds=60))
+        entries = service.history("A1", "org1")
+        assert len(entries) == 2
+        assert entries[0]["previous_health_status"] == "suspect"
+        assert entries[0]["health_status"] == "offline"
+        assert entries[1]["previous_health_status"] == "healthy"
+        assert entries[1]["health_status"] == "suspect"
+        # Recovery via heartbeat is recorded too.
+        previous, _ = service.record_heartbeat("A1", "org1")
+        assert previous is HealthStatus.OFFLINE
+        entries = service.history("A1", "org1")
+        assert len(entries) == 3
+        assert entries[0]["health_status"] == "healthy"
+
+    def test_history_endpoint(self, monkeypatch, auth_mock):
+        health_service, _ = _install_services(monkeypatch)
+        health_service.record_heartbeat("A1", "org1")
+        health_service.update_status("A1", "org1", HealthStatus.SUSPECT, T0)
+        _override_registry()
+        monkeypatch.setattr(
+            "common.custom.custom_handle.HandlerRegistry.get_handler", lambda t: auth_mock)
+        client = TestClient(app)
+        response = client.get("/rest/v1/registry-center/agents/health/history",
+                              params={"name": "A1", "organization": "org1"})
+        assert response.status_code == 200
+        history = response.json()["history"]
+        assert len(history) == 1
+        assert history[0]["previous_health_status"] == "healthy"
+
+    def test_history_endpoint_disabled_503(self, monkeypatch, auth_mock):
+        _install_services(monkeypatch, health_config={"heartbeat.enabled": "false"})
+        _override_registry()
+        monkeypatch.setattr(
+            "common.custom.custom_handle.HandlerRegistry.get_handler", lambda t: auth_mock)
+        client = TestClient(app)
+        response = client.get("/rest/v1/registry-center/agents/health/history")
+        assert response.status_code == 503
+
+
+class TestEventBusListeners:
+    def test_listeners_receive_published_events(self):
+        bus = EventBus(MemoryOutbox())
+        seen = []
+        bus.add_listener(seen.append)
+        bus.publish(EventType.AGENT_HEALTH_CHANGED, {"name": "a"})
+        assert len(seen) == 1
+        assert seen[0].event_type is EventType.AGENT_HEALTH_CHANGED
+        bus.remove_listener(seen.append)
+        bus.publish(EventType.AGENT_REGISTERED, {"name": "b"})
+        assert len(seen) == 1
+
+    def test_failing_listener_does_not_break_publish(self):
+        bus = EventBus(MemoryOutbox())
+        bus.add_listener(lambda _e: 1 / 0)
+        event = bus.publish(EventType.AGENT_UPDATED, {"name": "a"})
+        assert event.data["name"] == "a"
+
+
+class TestHealthStreamEndpoint:
+    def test_stream_disabled_503(self, monkeypatch, auth_mock):
+        _install_services(monkeypatch, health_config={"heartbeat.enabled": "false"})
+        _override_registry()
+        monkeypatch.setattr(
+            "common.custom.custom_handle.HandlerRegistry.get_handler", lambda t: auth_mock)
+        client = TestClient(app)
+        response = client.get("/rest/v1/registry-center/agents/health/stream")
+        assert response.status_code == 503
+
+    @pytest.mark.asyncio
+    async def test_stream_pushes_health_events(self, monkeypatch, auth_mock):
+        from starlette.requests import Request as StarletteRequest
+        from agent_registry.server import stream_agent_health
+
+        _, broadcast_service = _install_services(monkeypatch)
+        _override_registry()
+        monkeypatch.setattr(
+            "common.custom.custom_handle.HandlerRegistry.get_handler", lambda t: auth_mock)
+
+        scope = {
+            "type": "http", "http_version": "1.1", "method": "GET",
+            "path": "/rest/v1/registry-center/agents/health/stream",
+            "query_string": b"", "headers": [], "client": ("test", 12345),
+        }
+
+        async def receive():
+            return {"type": "http.request", "body": b"", "more_body": False}
+
+        request = StarletteRequest(scope, receive=receive)
+        response = await stream_agent_health(request, _=None)
+        assert response.media_type == "text/event-stream"
+
+        frames = []
+        got_event = False
+        try:
+            async for chunk in response.body_iterator:
+                text = chunk.decode("utf-8") if isinstance(chunk, bytes) else chunk
+                frames.append(text)
+                if ": connected" in text:
+                    # Listener is live now — publish and expect the frame next.
+                    broadcast_service.event_bus.publish(EventType.AGENT_HEALTH_CHANGED, {
+                        "name": "A1", "organization": "org1",
+                        "health_status": "offline", "previous_health_status": "suspect",
+                    })
+                if "event: health_changed" in text:
+                    got_event = True
+                    break
+        finally:
+            await response.body_iterator.aclose()
+        assert got_event
+        event_frame = [f for f in frames if "event: health_changed" in f][0]
+        data_line = [l for l in event_frame.splitlines() if l.startswith("data: ")][0]
+        payload = json.loads(data_line[len("data: "):])
+        assert payload["event_type"] == "AGENT_HEALTH_CHANGED"
+        assert payload["data"]["health_status"] == "offline"
