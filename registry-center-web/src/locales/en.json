@@ -68,6 +68,20 @@
     "minutes_ago": "{{count}}m ago",
     "hours_ago": "{{count}}h ago",
     "days_ago": "{{count}}d ago"
+    "stats_total": "Total Agents",
+    "stats_service": "Service Layer",
+    "stats_network": "Network Layer",
+    "stats_orgs": "Organizations",
+    "view_cards": "Card view",
+    "view_table": "Table view",
+    "col_name": "Name",
+    "col_layer": "Layer",
+    "col_org": "Organization",
+    "col_skills": "Capability Tags",
+    "col_version": "Version",
+    "col_skills_count": "Skills",
+    "view_cards_btn": "Cards",
+    "view_table_btn": "Table"
   },
   "detail": {
     "title": "AgentCard Detail",
