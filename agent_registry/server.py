@@ -35,6 +35,7 @@ from a2a.types import AgentCard
 from fastapi import FastAPI, HTTPException, Query, Request, Depends, status, Path
 from fastapi.exceptions import RequestValidationError
 from fastapi.responses import JSONResponse
+from starlette.responses import StreamingResponse
 from google.protobuf.json_format import Parse, MessageToDict
 from loguru import logger
 from limits import strategies, storage, parse_many
@@ -975,7 +976,86 @@ async def list_agents_health(
                 "last_heartbeat_at": state.last_heartbeat_at.isoformat(),
                 "status_changed_at": state.status_changed_at.isoformat(),
             })
-        return {"agents": agents}
+        # Detection config lets dashboards align with the actual thresholds
+        # (e.g. countdown-to-offline bars) instead of hard-coded defaults.
+        return {"agents": agents, "config": health_service.detection_config()}
+
+
+@app.get("/rest/v1/registry-center/agents/health/history",
+         summary="Query agent health transition history")
+async def list_agents_health_history(
+        request: Request,
+        name: Optional[str] = Query(None, description="Filter by agent name"),
+        organization: Optional[str] = Query(None, description="Filter by organization"),
+        limit: int = Query(50, ge=1, le=500, description="Max entries"),
+        _: Any = Depends(RateLimiter('query')),
+):
+    """Recent health status transitions (newest first) for audits and timelines."""
+    client_ip = request.client.host
+    authenticate_handle = HandlerRegistry.get_handler(InterfaceType.AUTHENTICATE)
+    await authenticate_handle.handle(client_ip, request)
+
+    async with semaphore_guard(query_semaphore):
+        health_service = get_health_service()
+        if not health_service.enabled:
+            raise CustomHTTPException(status.HTTP_503_SERVICE_UNAVAILABLE,
+                                      "Heartbeat detection is disabled")
+        return {"history": health_service.history(name, organization, limit)}
+
+
+@app.get("/rest/v1/registry-center/agents/health/stream",
+         summary="Stream agent health changes (Server-Sent Events)")
+async def stream_agent_health(
+        request: Request,
+        _: Any = Depends(RateLimiter('query')),
+):
+    """
+    Real-time AGENT_HEALTH_CHANGED push over SSE. Emits `event: health_changed`
+    frames with the RegistryEvent payload; a `: ping` comment every 15s keeps
+    intermediaries from closing the connection.
+    """
+    client_ip = request.client.host
+    authenticate_handle = HandlerRegistry.get_handler(InterfaceType.AUTHENTICATE)
+    await authenticate_handle.handle(client_ip, request)
+
+    health_service = get_health_service()
+    if not health_service.enabled:
+        raise CustomHTTPException(status.HTTP_503_SERVICE_UNAVAILABLE,
+                                  "Heartbeat detection is disabled")
+
+    broadcast_service = get_broadcast_service()
+    loop = asyncio.get_running_loop()
+    event_queue: asyncio.Queue = asyncio.Queue(maxsize=100)
+
+    def listener(event):
+        if event.event_type != EventType.AGENT_HEALTH_CHANGED:
+            return
+        try:
+            loop.call_soon_threadsafe(event_queue.put_nowait, event)
+        except RuntimeError:
+            pass  # event loop already closed
+
+    async def event_stream():
+        broadcast_service.event_bus.add_listener(listener)
+        try:
+            yield ": connected\n\n"
+            while True:
+                if await request.is_disconnected():
+                    break
+                try:
+                    event = await asyncio.wait_for(event_queue.get(), timeout=15.0)
+                    payload = json.dumps(event.to_dict(), ensure_ascii=False)
+                    yield f"event: health_changed\ndata: {payload}\n\n"
+                except asyncio.TimeoutError:
+                    yield ": ping\n\n"
+        finally:
+            broadcast_service.event_bus.remove_listener(listener)
+
+    return StreamingResponse(
+        event_stream(),
+        media_type="text/event-stream",
+        headers={"Cache-Control": "no-cache", "X-Accel-Buffering": "no"},
+    )
 
 
 # ---------- Subscription & Change Broadcast Endpoints ----------

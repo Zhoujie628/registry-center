@@ -6,13 +6,17 @@
 """Heartbeat storage backends: in-memory (default) and SQL (delegated)."""
 
 import threading
+import uuid
 from abc import ABC, abstractmethod
+from collections import deque
 from datetime import datetime, timedelta, timezone
 from typing import List, Optional, Tuple
 
 from loguru import logger
 
 from agent_registry.health.state import HealthState, HealthStatus
+
+HISTORY_MEMORY_MAXLEN = 500
 
 
 class HeartbeatStore(ABC):
@@ -43,6 +47,19 @@ class HeartbeatStore(ABC):
         ...
 
     @abstractmethod
+    def append_history(self, name: str, organization: str,
+                       previous_status: HealthStatus, new_status: HealthStatus,
+                       changed_at: datetime) -> None:
+        """Record a health status transition (newest first on query)."""
+        ...
+
+    @abstractmethod
+    def list_history(self, name: Optional[str] = None,
+                     organization: Optional[str] = None,
+                     limit: int = 50) -> List[dict]:
+        ...
+
+    @abstractmethod
     def close(self):
         ...
 
@@ -56,6 +73,7 @@ class MemoryHeartbeatStore(HeartbeatStore):
 
     def __init__(self):
         self._states = {}
+        self._history = deque(maxlen=HISTORY_MEMORY_MAXLEN)
         self._lock = threading.Lock()
 
     def record_heartbeat(self, name, organization, received_at):
@@ -98,6 +116,30 @@ class MemoryHeartbeatStore(HeartbeatStore):
         with self._lock:
             self._states.pop((name, organization), None)
 
+    def append_history(self, name, organization, previous_status, new_status, changed_at):
+        entry = {
+            "name": name,
+            "organization": organization,
+            "previous_health_status": previous_status.value,
+            "health_status": new_status.value,
+            "changed_at": changed_at.isoformat(),
+        }
+        with self._lock:
+            self._history.appendleft(entry)
+
+    def list_history(self, name=None, organization=None, limit=50):
+        with self._lock:
+            matched = []
+            for entry in self._history:
+                if name is not None and entry["name"] != name:
+                    continue
+                if organization is not None and entry["organization"] != organization:
+                    continue
+                matched.append(dict(entry))
+                if len(matched) >= limit:
+                    break
+            return matched
+
     def close(self):
         pass
 
@@ -128,7 +170,21 @@ class SqlHeartbeatStore(HeartbeatStore):
         self._backend._execute_write(
             "CREATE INDEX IF NOT EXISTS idx_agent_health_status ON agent_health(status)"
         )
-        logger.info("Health table 'agent_health' created/verified")
+        self._backend._execute_write("""
+            CREATE TABLE IF NOT EXISTS agent_health_history (
+                event_id           VARCHAR(64)  PRIMARY KEY,
+                agent_name         VARCHAR(100) NOT NULL,
+                organization       VARCHAR(100) NOT NULL,
+                previous_status    VARCHAR(16)  NOT NULL,
+                new_status         VARCHAR(16)  NOT NULL,
+                changed_at         VARCHAR(64)  NOT NULL
+            )
+        """)
+        self._backend._execute_write(
+            "CREATE INDEX IF NOT EXISTS idx_agent_health_history_agent "
+            "ON agent_health_history(agent_name, organization)"
+        )
+        logger.info("Health tables 'agent_health'/'agent_health_history' created/verified")
 
     def _row_to_state(self, row) -> HealthState:
         return HealthState(
@@ -204,6 +260,39 @@ class SqlHeartbeatStore(HeartbeatStore):
             f"DELETE FROM agent_health WHERE agent_name = {self._ph} AND organization = {self._ph}",
             (name, organization)
         )
+
+    def append_history(self, name, organization, previous_status, new_status, changed_at):
+        with self._lock:
+            self._backend._execute_write(
+                f"INSERT INTO agent_health_history (event_id, agent_name, organization, "
+                f"previous_status, new_status, changed_at) "
+                f"VALUES ({self._ph}, {self._ph}, {self._ph}, {self._ph}, {self._ph}, {self._ph})",
+                (str(uuid.uuid4()), name, organization, previous_status.value,
+                 new_status.value, changed_at.isoformat())
+            )
+
+    def list_history(self, name=None, organization=None, limit=50):
+        clauses, params = [], []
+        if name is not None:
+            clauses.append(f"agent_name = {self._ph}")
+            params.append(name)
+        if organization is not None:
+            clauses.append(f"organization = {self._ph}")
+            params.append(organization)
+        where = f" WHERE {' AND '.join(clauses)}" if clauses else ""
+        rows = self._backend._execute_read_all(
+            f"SELECT agent_name, organization, previous_status, new_status, changed_at "
+            f"FROM agent_health_history{where} "
+            f"ORDER BY changed_at DESC LIMIT {int(limit)}",
+            tuple(params)
+        )
+        return [{
+            "name": r[0],
+            "organization": r[1],
+            "previous_health_status": r[2],
+            "health_status": r[3],
+            "changed_at": r[4],
+        } for r in rows]
 
     def close(self):
         pass
