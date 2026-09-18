@@ -117,4 +117,26 @@ export async function getPublicKeys() {
     return api.get(`${REGISTRY_BASE()}/keys`)
 }
 
+// ---- Heartbeat & health ----
+
+export async function getAgentsHealth(status, injectedApi) {
+    const params = {}
+    if (status) params.status = status
+    const client = injectedApi || api
+    return client.get(`${REGISTRY_BASE()}/agents/health`, { params })
+}
+
+export async function getAgentsHealthHistory(name, organization, limit = 50, injectedApi) {
+    const params = { limit }
+    if (name) params.name = name
+    if (organization) params.organization = organization
+    const client = injectedApi || api
+    return client.get(`${REGISTRY_BASE()}/agents/health/history`, { params })
+}
+
+// SSE cannot go through axios — build the absolute URL for native EventSource.
+export function getHealthStreamUrl() {
+    return `${getBaseUrl()}${API_PREFIX}/agents/health/stream`
+}
+
 export default api

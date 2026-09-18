@@ -34,10 +34,14 @@ import {
     Globe,
     CheckCircle2,
     AlertCircle,
+    HeartPulse,
 } from 'lucide-react'
-import { getAgentCards } from '@/service/api.js'
+import { getAgentCards, getAgentsHealth } from '@/service/api.js'
+import { useHealthPolling } from '@/hooks/use_health_polling.js'
 import AgentCard from './agentcard_visualization/index.jsx'
 import CodeInspector from './code_inspector/index.jsx'
+import HeartbeatMonitor from '../heartbeat_monitor/index.jsx'
+import StatusBadge, { STATUS_STYLES } from '../heartbeat_monitor/status_badge.jsx'
 
 const NETWORK_LAYER_VENDORS = ['huawei', 'ericsson', 'zte', '华为', '爱立信', '中兴']
 const SERVICE_LAYER_VENDORS = ['直真', '新大陆', '福诺', '亿阳', '移动']
@@ -73,6 +77,7 @@ const AgentRegistry = ({ isDark, api }) => {
     const [activeTab, setActiveTab] = useState('all')
     const [selectedAgent, setSelectedAgent] = useState(null)
     const [viewMode, setViewMode] = useState('structured')
+    const [view, setView] = useState('registry')
 
     const [toast, setToast] = useState(null)
 
@@ -119,6 +124,37 @@ const AgentRegistry = ({ isDark, api }) => {
     useEffect(() => {
         fetchData()
     }, [fetchData])
+
+    // Heartbeat states for the cards: light polling (paused to ~1h when the
+    // backend has heartbeat detection disabled). Unknown until the config
+    // arrives, so the cards keep their legacy look rather than flashing.
+    const [healthMap, setHealthMap] = useState({})
+    const [heartbeatEnabled, setHeartbeatEnabled] = useState(null)
+    const fetchHealth = useCallback(() => getAgentsHealth(undefined, api), [api])
+    // Pause while the heartbeat monitor view is active (it has its own feed).
+    const { data: healthData } = useHealthPolling(
+        fetchHealth,
+        view === 'heartbeat' || heartbeatEnabled === false ? 3600000 : 15000,
+    )
+    useEffect(() => {
+        if (!healthData) return
+        const cfg = healthData.config
+        setHeartbeatEnabled(cfg ? cfg.enabled !== false : true)
+        const map = {}
+        ;(healthData.agents || []).forEach((a) => {
+            map[`${a.organization}/${a.name}`] = a.health_status
+        })
+        setHealthMap(map)
+    }, [healthData])
+
+    const healthOf = useCallback(
+        (name, organization) => {
+            if (heartbeatEnabled !== true) return null
+            // Agents that never reported a heartbeat are treated as offline.
+            return healthMap[`${organization}/${name}`] || 'offline'
+        },
+        [heartbeatEnabled, healthMap],
+    )
 
     const filteredAgents = useMemo(() => {
         let result = agents
@@ -201,7 +237,10 @@ const AgentRegistry = ({ isDark, api }) => {
             ? 'bg-emerald-100 dark:bg-emerald-900/30 text-emerald-700 dark:text-emerald-400 border-emerald-200 dark:border-emerald-800'
             : 'bg-blue-100 dark:bg-blue-900/30 text-blue-700 dark:text-blue-400 border-blue-200 dark:border-blue-800'
 
-    const renderCard = (agent) => (
+    const renderCard = (agent) => {
+        const health = healthOf(agent.id, agent.provider?.organization)
+        const healthStyle = health ? (STATUS_STYLES[health] || STATUS_STYLES.unknown) : null
+        return (
         <div
             key={agent.id}
             onClick={() => {
@@ -221,8 +260,26 @@ const AgentRegistry = ({ isDark, api }) => {
                     {cloneElement(agent.icon, { size: 22 })}
                 </div>
                 <div className="flex items-center gap-2">
-                    <div className="w-2 h-2 rounded-full bg-emerald-500 shadow-[0_0_6px_#10b981]" />
-                    <span className="text-[10px] font-black text-zinc-400 dark:text-zinc-500 uppercase">
+                    {health && healthStyle ? (
+                        <span
+                            className="flex items-center gap-1.5"
+                            title={t(`heartbeat.status_${health}`)}
+                        >
+                            <span
+                                className={`w-2 h-2 rounded-full ${healthStyle.dot} ${healthStyle.glow} ${
+                                    health === 'suspect' ? 'animate-pulse-soft' : ''
+                                }`}
+                            />
+                            <span className="text-sm font-bold text-zinc-500 dark:text-zinc-400">
+                                {health === 'offline'
+                                    ? t('heartbeat.status_offline')
+                                    : t('heartbeat.status_online')}
+                            </span>
+                        </span>
+                    ) : (
+                        <div className="w-2 h-2 rounded-full bg-emerald-500 shadow-[0_0_6px_#10b981]" />
+                    )}
+                    <span className="text-sm font-black text-zinc-400 dark:text-zinc-500 uppercase">
                         V{agent.version}
                     </span>
                 </div>
@@ -273,24 +330,64 @@ const AgentRegistry = ({ isDark, api }) => {
                 </span>
             </div>
         </div>
+        )
+    }
+
+    const viewToggle = (
+        <div className="flex items-center gap-1 p-1 rounded-xl bg-zinc-100 dark:bg-zinc-800/60 border border-zinc-200 dark:border-zinc-700">
+            <button
+                onClick={() => setView('registry')}
+                className={`flex items-center gap-2 px-4 py-2 rounded-lg text-sm font-black uppercase tracking-wide transition-all ${
+                    view === 'registry'
+                        ? 'bg-white dark:bg-zinc-900 text-zinc-900 dark:text-white shadow-sm'
+                        : 'text-zinc-400 dark:text-zinc-500 hover:text-zinc-600 dark:hover:text-zinc-300'
+                }`}
+            >
+                <LayoutDashboard size={13} />
+                {t('registry.view_registry')}
+            </button>
+            <button
+                onClick={() => setView('heartbeat')}
+                className={`flex items-center gap-2 px-4 py-2 rounded-lg text-sm font-black uppercase tracking-wide transition-all ${
+                    view === 'heartbeat'
+                        ? 'bg-white dark:bg-zinc-900 text-zinc-900 dark:text-white shadow-sm'
+                        : 'text-zinc-400 dark:text-zinc-500 hover:text-zinc-600 dark:hover:text-zinc-300'
+                }`}
+            >
+                <HeartPulse size={13} />
+                {t('heartbeat.view_title')}
+            </button>
+        </div>
     )
 
     return (
         <div className="h-full p-6 flex flex-col w-full transition-all animate-in fade-in duration-500 overflow-hidden font-sans">
-            <div className="shrink-0 flex items-center justify-start mb-6 px-2">
-                <div className="flex items-center gap-3">
-                    <div className="relative w-72">
-                        <input
-                            type="text"
-                            placeholder={t('registry.search_placeholder')}
-                            className="w-full pl-10 pr-4 py-2.5 bg-white dark:bg-zinc-900 border border-zinc-200 dark:border-zinc-700 rounded-xl text-sm font-bold focus:ring-2 focus:ring-blue-500/20 focus:border-blue-400 outline-none transition-all dark:text-white"
-                            onChange={(e) => setSearchTerm(e.target.value)}
-                            value={searchTerm}
-                        />
-                        <Search className="absolute left-3.5 top-3 text-zinc-400" size={14} />
+            {view === 'heartbeat' ? (
+                <>
+                    <div className="shrink-0 flex items-center justify-end mb-6 px-2">
+                        {viewToggle}
                     </div>
-                </div>
-            </div>
+                    <div className="flex-1 min-h-0">
+                        <HeartbeatMonitor isDark={isDark} api={api} />
+                    </div>
+                </>
+            ) : (
+                <>
+                    <div className="shrink-0 flex items-center justify-between mb-6 px-2">
+                        <div className="flex items-center gap-3">
+                            <div className="relative w-72">
+                                <input
+                                    type="text"
+                                    placeholder={t('registry.search_placeholder')}
+                                    className="w-full pl-10 pr-4 py-2.5 bg-white dark:bg-zinc-900 border border-zinc-200 dark:border-zinc-700 rounded-xl text-sm font-bold focus:ring-2 focus:ring-blue-500/20 focus:border-blue-400 outline-none transition-all dark:text-white"
+                                    onChange={(e) => setSearchTerm(e.target.value)}
+                                    value={searchTerm}
+                                />
+                                <Search className="absolute left-3.5 top-3 text-zinc-400" size={14} />
+                            </div>
+                        </div>
+                        {viewToggle}
+                    </div>
 
             <div className="shrink-0 flex items-center gap-1 mb-6 px-2">
                 {TABS.map((tab) => (
@@ -386,17 +483,34 @@ const AgentRegistry = ({ isDark, api }) => {
                                         {selectedAgent.id}
                                     </h2>
                                     <div className="flex items-center gap-2 mt-1">
-                                        <span className="text-[10px] font-bold text-zinc-400 uppercase">
+                                        <span className="text-sm font-bold text-zinc-400 uppercase">
                                             {selectedAgent.provider?.organization}
                                         </span>
                                         <span className="w-1 h-1 rounded-full bg-zinc-300" />
-                                        <span className="text-[10px] font-bold text-zinc-400">
+                                        <span className="text-sm font-bold text-zinc-400">
                                             V{selectedAgent.version}
                                         </span>
                                         <span className="w-1 h-1 rounded-full bg-zinc-300" />
-                                        <span className="text-[10px] font-bold text-zinc-400">
+                                        <span className="text-sm font-bold text-zinc-400">
                                             {selectedAgent.skills?.length} {t('registry.skills_count')}
                                         </span>
+                                        {healthOf(selectedAgent.id, selectedAgent.provider?.organization) && (
+                                            <>
+                                                <span className="w-1 h-1 rounded-full bg-zinc-300" />
+                                                <StatusBadge
+                                                    status={healthOf(
+                                                        selectedAgent.id,
+                                                        selectedAgent.provider?.organization,
+                                                    )}
+                                                    pulse={
+                                                        healthOf(
+                                                            selectedAgent.id,
+                                                            selectedAgent.provider?.organization,
+                                                        ) === 'suspect'
+                                                    }
+                                                />
+                                            </>
+                                        )}
                                     </div>
                                 </div>
                             </div>
@@ -456,6 +570,8 @@ const AgentRegistry = ({ isDark, api }) => {
                     </motion.div>
                 )}
             </AnimatePresence>
+                </>
+            )}
         </div>
     )
 }
