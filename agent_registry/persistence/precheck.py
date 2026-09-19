@@ -98,7 +98,7 @@ def verify_storage_ready() -> None:
     On the happy path this leaves the registry singleton fully initialized,
     so the later FastAPI startup event becomes a cheap no-op.
     """
-    from agent_registry.config import PERSISTENCE_CONF, PERSISTENCE_MODE
+    from agent_registry.config import PERSISTENCE_CONF, PERSISTENCE_MODE, USE_VECTORDB
     from agent_registry.registry_instance import get_registry
     try:
         registry = get_registry()
@@ -108,5 +108,16 @@ def verify_storage_ready() -> None:
     except SystemExit:
         raise
     except Exception as exc:
-        logger.error(format_storage_error(PERSISTENCE_MODE, PERSISTENCE_CONF, exc))
+        if USE_VECTORDB:
+            # The backend is the vector DB here; storage-mode diagnostics
+            # would point the operator at the wrong configuration.
+            logger.error(
+                f"[storage pre-check] FAILED to initialize vectordb backend "
+                f"(use_vectordb=true): {type(exc).__name__}: {exc}\n"
+                "Check the vector database (Milvus) configuration/connectivity "
+                "and embedding service settings, then restart. "
+                "Exiting before the service port is bound."
+            )
+        else:
+            logger.error(format_storage_error(PERSISTENCE_MODE, PERSISTENCE_CONF, exc))
         sys.exit(1)

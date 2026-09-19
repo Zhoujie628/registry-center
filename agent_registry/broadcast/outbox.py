@@ -132,17 +132,6 @@ class SqlOutbox(OutboxStore):
     def _ph(self):
         return getattr(self._backend, "param_ph", "%s")
 
-    def _ensure_index(self, ddl_if_not_exists: str, ddl_plain: str):
-        """Create an index, tolerating dialects without CREATE INDEX IF NOT EXISTS."""
-        if getattr(self._backend, "supports_create_index_if_not_exists", True):
-            self._backend._execute_write(ddl_if_not_exists)
-            return
-        try:
-            self._backend._execute_write(ddl_plain)
-        except Exception as e:
-            # MySQL errno 1061: duplicate key name — index already exists
-            logger.debug(f"Skip index creation (likely already exists): {e}")
-
     def _ensure_table(self):
         ddl = """
             CREATE TABLE IF NOT EXISTS registry_events (
@@ -157,12 +146,12 @@ class SqlOutbox(OutboxStore):
             )
         """
         self._backend._execute_write(ddl)
-        self._ensure_index(
+        self._backend.ensure_index(
             "CREATE INDEX IF NOT EXISTS idx_registry_events_version "
             "ON registry_events(registry_version)",
             "CREATE INDEX idx_registry_events_version ON registry_events(registry_version)"
         )
-        self._ensure_index(
+        self._backend.ensure_index(
             "CREATE INDEX IF NOT EXISTS idx_registry_events_status "
             "ON registry_events(status)",
             "CREATE INDEX idx_registry_events_status ON registry_events(status)"

@@ -133,3 +133,59 @@ def test_sqlite_check_connection_raises_when_unusable(tmp_path):
     storage._conn.close()
     with pytest.raises(sqlite3.ProgrammingError):
         storage.check_connection()
+
+
+# ---------- ensure_index (dialect-aware index DDL) ----------
+
+class _RecordingBackend:
+    supports_create_index_if_not_exists = True
+
+    def __init__(self):
+        self.writes = []
+
+    def _execute_write(self, ddl):
+        self.writes.append(ddl)
+
+
+def test_ensure_index_uses_if_not_exists_when_supported():
+    from agent_registry.persistence.sql_backend import SqlStorageBackend
+    backend = _RecordingBackend()
+    SqlStorageBackend.ensure_index(
+        backend,
+        "CREATE INDEX IF NOT EXISTS i ON t(c)",
+        "CREATE INDEX i ON t(c)",
+    )
+    assert backend.writes == ["CREATE INDEX IF NOT EXISTS i ON t(c)"]
+
+
+def test_ensure_index_uses_plain_ddl_without_dialect_support():
+    from agent_registry.persistence.sql_backend import SqlStorageBackend
+    backend = _RecordingBackend()
+    backend.supports_create_index_if_not_exists = False
+    SqlStorageBackend.ensure_index(
+        backend,
+        "CREATE INDEX IF NOT EXISTS i ON t(c)",
+        "CREATE INDEX i ON t(c)",
+    )
+    assert backend.writes == ["CREATE INDEX i ON t(c)"]
+
+
+def test_ensure_index_swallows_duplicate_index_error_only():
+    from agent_registry.persistence.sql_backend import SqlStorageBackend
+
+    class _FailingBackend(_RecordingBackend):
+        supports_create_index_if_not_exists = False
+
+        def __init__(self, error):
+            super().__init__()
+            self._error = error
+
+        def _execute_write(self, ddl):
+            raise self._error
+
+    duplicate = Exception()
+    duplicate.args = (1061, "Duplicate key name 'idx_x'")
+    SqlStorageBackend.ensure_index(_FailingBackend(duplicate), "a", "b")  # tolerated
+
+    with pytest.raises(RuntimeError, match="privilege"):
+        SqlStorageBackend.ensure_index(_FailingBackend(RuntimeError("missing privilege")), "a", "b")

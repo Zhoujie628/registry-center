@@ -34,6 +34,24 @@ class SqlStorageBackend(StorageBackend):
     # a duplicate-tolerant plain CREATE INDEX instead.
     supports_create_index_if_not_exists = True
 
+    def ensure_index(self, ddl_if_not_exists: str, ddl_plain: str) -> None:
+        """Create an index via dialect-appropriate DDL.
+
+        Dialects without CREATE INDEX IF NOT EXISTS run the plain form and
+        tolerate ONLY the duplicate-index error (MySQL errno 1061); any other
+        failure propagates instead of being swallowed.
+        """
+        if self.supports_create_index_if_not_exists:
+            self._execute_write(ddl_if_not_exists)
+            return
+        try:
+            self._execute_write(ddl_plain)
+        except Exception as e:
+            if getattr(e, "args", None) and e.args and e.args[0] == 1061:
+                logger.debug(f"Index already exists, skipping: {e}")
+            else:
+                raise
+
     # ---- connection management (subclass implements) ----
 
     def _acquire_conn(self):

@@ -25,9 +25,12 @@ pool. Dialect differences handled here vs the PG backends:
   writes explicitly but never commits reads, and MySQL's default
   REPEATABLE READ isolation would serve stale snapshots on pooled read
   connections.
-- CLIENT.FOUND_ROWS makes UPDATE rowcount report matched rows (like
-  psycopg2) instead of changed rows, so update() stays True for no-op
-  updates.
+- No CLIENT_FOUND_ROWS flag: the default changed-rows semantics keep
+  ON DUPLICATE KEY UPDATE rowcount at 0 for a no-op duplicate, so
+  create() returns False on a registration race (mirroring PG's
+  ON CONFLICT DO NOTHING). Trade-off: update() reports changed rows
+  instead of matched rows, so an update that changes nothing returns
+  False on MySQL (PG returns True for the same call).
 - ping=1 re-validates each connection when fetched: MySQL's wait_timeout
   kills idle server-side connections, unlike the PG backends.
 - blocking=True makes pool exhaustion wait for a free connection instead
@@ -38,6 +41,7 @@ pool. Dialect differences handled here vs the PG backends:
   CREATE INDEX (see supports_create_index_if_not_exists).
 """
 
+import json
 import re
 
 import pymysql
@@ -89,7 +93,6 @@ class MySQLStorage(SqlStorageBackend):
             password=password,
             connect_timeout=connect_timeout,
             charset='utf8mb4',
-            client_flag=pymysql.constants.CLIENT.FOUND_ROWS,
         )
         logger.info("MySQL connection pool initialized")
 

@@ -156,17 +156,6 @@ class SqlHeartbeatStore(HeartbeatStore):
     def _ph(self):
         return getattr(self._backend, "param_ph", "%s")
 
-    def _ensure_index(self, ddl_if_not_exists: str, ddl_plain: str):
-        """Create an index, tolerating dialects without CREATE INDEX IF NOT EXISTS."""
-        if getattr(self._backend, "supports_create_index_if_not_exists", True):
-            self._backend._execute_write(ddl_if_not_exists)
-            return
-        try:
-            self._backend._execute_write(ddl_plain)
-        except Exception as e:
-            # MySQL errno 1061: duplicate key name — index already exists
-            logger.debug(f"Skip index creation (likely already exists): {e}")
-
     def _ensure_table(self):
         self._backend._execute_write("""
             CREATE TABLE IF NOT EXISTS agent_health (
@@ -178,7 +167,7 @@ class SqlHeartbeatStore(HeartbeatStore):
                 PRIMARY KEY (agent_name, organization)
             )
         """)
-        self._ensure_index(
+        self._backend.ensure_index(
             "CREATE INDEX IF NOT EXISTS idx_agent_health_status ON agent_health(status)",
             "CREATE INDEX idx_agent_health_status ON agent_health(status)"
         )
@@ -192,7 +181,7 @@ class SqlHeartbeatStore(HeartbeatStore):
                 changed_at         VARCHAR(64)  NOT NULL
             )
         """)
-        self._ensure_index(
+        self._backend.ensure_index(
             "CREATE INDEX IF NOT EXISTS idx_agent_health_history_agent "
             "ON agent_health_history(agent_name, organization)",
             "CREATE INDEX idx_agent_health_history_agent "

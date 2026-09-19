@@ -128,18 +128,6 @@ class TestMySQLStorageCRUD:
         record = clean_mysql_tables.find_by_key("upd", "o1")
         assert record.agent_card.version == "2.0.0"
 
-    def test_update_no_change_returns_true(self, clean_mysql_tables, make_agent):
-        """FOUND_ROWS client flag: unchanged rows still count as matched."""
-        clean_mysql_tables.create(make_agent("noop", "o1"))
-        agent_data = {
-            "name": "noop",
-            "provider": {"organization": "o1", "url": "https://test.com"},
-            "description": f"Test agent noop",
-            "version": "1.0.0",
-            "skills": []
-        }
-        assert clean_mysql_tables.update("noop", "o1", agent_data) is True
-
     def test_update_status(self, clean_mysql_tables, make_agent):
         clean_mysql_tables.create(make_agent("s1", "o1"))
         assert clean_mysql_tables.update_status("s1", "o1", "registered") is True
