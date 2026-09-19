@@ -29,6 +29,10 @@ class SqlStorageBackend(StorageBackend):
     _integrity_error = Exception
     # Parameter placeholder for dialect-agnostic helper queries (%s for psycopg2).
     param_ph = "%s"
+    # Whether the dialect supports `CREATE INDEX IF NOT EXISTS`. Backends that
+    # don't (e.g. MySQL) set this to False; auxiliary SQL stores use it to pick
+    # a duplicate-tolerant plain CREATE INDEX instead.
+    supports_create_index_if_not_exists = True
 
     # ---- connection management (subclass implements) ----
 
@@ -75,6 +79,26 @@ class SqlStorageBackend(StorageBackend):
             cur = conn.cursor()
             cur.execute(query, params or ())
             return cur.fetchall()
+        finally:
+            if cur:
+                cur.close()
+            self._release_conn(conn)
+
+    # ---- startup pre-check ----
+
+    def check_connection(self) -> None:
+        """Round-trip sanity check used by the startup pre-check.
+
+        Raises the driver's connection/operational error when the backend is
+        unreachable. Uses explicit cursor close (not `with`) because
+        sqlite3 cursors don't support the context manager protocol.
+        """
+        conn = self._acquire_conn()
+        cur = None
+        try:
+            cur = conn.cursor()
+            cur.execute("SELECT 1")
+            cur.fetchone()
         finally:
             if cur:
                 cur.close()

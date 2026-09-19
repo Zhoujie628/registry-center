@@ -96,6 +96,58 @@ if [ -n "${DB_POOL_MAX}" ]; then
     echo "Config override: postgresql.pool.max=${DB_POOL_MAX}"
 fi
 
+# --- generic DB_* override for gauss / mysql modes (postgresql handled above) ---
+# The gauss/mysql blocks in persistence.conf resolve ${GAUSS_*} / ${MYSQL_*}
+# env vars natively; DB_* is the container convention shared with the
+# postgresql block above.
+if [ "${PERSISTENCE_MODE}" = "gauss" ] || [ "${PERSISTENCE_MODE}" = "mysql" ]; then
+    _db_prefix="${PERSISTENCE_MODE}"
+    _db_name_key="name"
+    if [ "${PERSISTENCE_MODE}" = "gauss" ]; then
+        _db_name_key="database"
+    fi
+
+    if [ -n "${DB_HOST}" ]; then
+        sed -i "s#^${_db_prefix}.host=.*#${_db_prefix}.host=${DB_HOST}#" "${PERSISTENCE_CONF}"
+        echo "Config override: ${_db_prefix}.host=${DB_HOST}"
+    fi
+
+    if [ -n "${DB_PORT}" ]; then
+        sed -i "s#^${_db_prefix}.port=.*#${_db_prefix}.port=${DB_PORT}#" "${PERSISTENCE_CONF}"
+        echo "Config override: ${_db_prefix}.port=${DB_PORT}"
+    fi
+
+    if [ -n "${DB_NAME}" ]; then
+        sed -i "s#^${_db_prefix}.${_db_name_key}=.*#${_db_prefix}.${_db_name_key}=${DB_NAME}#" "${PERSISTENCE_CONF}"
+        echo "Config override: ${_db_prefix}.${_db_name_key}=${DB_NAME}"
+    fi
+
+    if [ -n "${DB_USERNAME}" ]; then
+        sed -i "s#^${_db_prefix}.username=.*#${_db_prefix}.username=${DB_USERNAME}#" "${PERSISTENCE_CONF}"
+        echo "Config override: ${_db_prefix}.username=${DB_USERNAME}"
+    fi
+
+    if [ -n "${DB_PASSWORD}" ]; then
+        sed -i "s#^${_db_prefix}.password=.*#${_db_prefix}.password=${DB_PASSWORD}#" "${PERSISTENCE_CONF}"
+        echo "Config override: ${_db_prefix}.password=***"
+    fi
+
+    if [ -n "${DB_POOL_MIN}" ]; then
+        sed -i "s#^${_db_prefix}.pool.min=.*#${_db_prefix}.pool.min=${DB_POOL_MIN}#" "${PERSISTENCE_CONF}"
+        echo "Config override: ${_db_prefix}.pool.min=${DB_POOL_MIN}"
+    fi
+
+    if [ -n "${DB_POOL_MAX}" ]; then
+        sed -i "s#^${_db_prefix}.pool.max=.*#${_db_prefix}.pool.max=${DB_POOL_MAX}#" "${PERSISTENCE_CONF}"
+        echo "Config override: ${_db_prefix}.pool.max=${DB_POOL_MAX}"
+    fi
+
+    if [ -n "${DB_CONNECT_TIMEOUT}" ]; then
+        sed -i "s#^${_db_prefix}.connect_timeout=.*#${_db_prefix}.connect_timeout=${DB_CONNECT_TIMEOUT}#" "${PERSISTENCE_CONF}"
+        echo "Config override: ${_db_prefix}.connect_timeout=${DB_CONNECT_TIMEOUT}"
+    fi
+fi
+
 # Ensure run/ directory exists for internal UDS service
 mkdir -p run
 
