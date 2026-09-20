@@ -21,3 +21,21 @@ jobs:
         run: pytest tests/ -v --tb=short
         env:
           PYTHONPATH: .
+
+  frontend-lint:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: registry-center-web
+    steps:
+      - uses: actions/checkout@v4
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+      - name: Install dependencies
+        run: npm ci
+      - name: Run ESLint
+        run: npm run lint
+      - name: Build
+        run: npm run build
