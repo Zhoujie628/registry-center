@@ -15,18 +15,4 @@
 #    License for the specific language governing permissions and limitations
 #    under the License.
 
-from enum import Enum
-
-
-class InterfaceType(Enum):
-    """Interface type enumeration"""
-    DECRYPT = "decrypt"
-    AUDIT = "audit"
-    AUTHENTICATE = "authenticate"
-    INTEGRATION_AUTHENTICATE = "integration_authenticate"
-    INSERT = "insert"
-    QUERY = "query"
-    UPDATE = "update"
-    GET = "get"
-    RETRIEVE = "retrieve"
-    DEREGISTER = "deregister"
+"""Integration access plane: credential loading, authentication, ban tracking."""

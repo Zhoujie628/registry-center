@@ -17,7 +17,7 @@
 
 a2a-sdk[signing]>=1.0.0a1
 loguru>=0.7.3
-uvicorn>=0.34.0
+uvicorn>=0.47.0
 fastapi>=0.115.11
 cryptography~=46.0.5
 limits~=4.0.0
