@@ -312,6 +312,44 @@ class TestCustomizedCreateSslContext:
 
 # ---------- record_startup_log ----------
 
+    def test_accepts_newer_uvicorn_keyword_arguments(self, tmp_path):
+        """Regression: uvicorn 0.53 passes alpn_protocols to
+        create_ssl_context — the global patch must absorb new keyword
+        arguments instead of raising TypeError (broke the cert-auth suite
+        and the HTTPS boot path on trunk)."""
+        import datetime
+        from cryptography import x509
+        from cryptography.hazmat.primitives import hashes, serialization
+        from cryptography.hazmat.primitives.asymmetric import rsa
+        from cryptography.x509.oid import NameOID
+
+        root = tmp_path / "pki"
+        root.mkdir()
+        name = x509.Name([x509.NameAttribute(NameOID.COMMON_NAME, "127.0.0.1")])
+        key = rsa.generate_private_key(public_exponent=65537, key_size=3072)
+        now = datetime.datetime.now(datetime.timezone.utc)
+        cert = (x509.CertificateBuilder()
+                .subject_name(name)
+                .issuer_name(name)
+                .public_key(key.public_key())
+                .serial_number(x509.random_serial_number())
+                .not_valid_before(now - datetime.timedelta(days=1))
+                .not_valid_after(now + datetime.timedelta(days=30))
+                .add_extension(x509.BasicConstraints(ca=False, path_length=None), critical=True)
+                .sign(key, hashes.SHA256()))
+        (root / "s.key").write_bytes(key.private_bytes(
+            serialization.Encoding.PEM,
+            serialization.PrivateFormat.TraditionalOpenSSL,
+            serialization.NoEncryption()))
+        (root / "s.cer").write_bytes(cert.public_bytes(serialization.Encoding.PEM))
+
+        ctx = start.customized_create_ssl_context(
+            str(root / "s.cer"), str(root / "s.key"), None,
+            ssl.PROTOCOL_TLS_SERVER, ssl.CERT_NONE, None, None,
+            alpn_protocols=["h2", "http/1.1"], some_future_kwarg="ignored")
+        assert ctx is not None
+
+
 class TestRecordStartupLog:
     def test_records_success_entry_with_config_ip_and_port(self, monkeypatch):
         recorder = _AuditRecorder()
