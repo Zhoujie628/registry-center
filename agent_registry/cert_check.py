@@ -19,7 +19,7 @@
 Client-certificate pre-check tool (task 6.1).
 
 Operators run this before handing a client certificate to an integrating
-third party (or before configuring one on the third-party access port):
+third party (or before configuring one on the integration access port):
 
     python -m agent_registry.cert_check client.cer --ca trust.cer [--crl revocationlist.crl]
 
@@ -82,7 +82,7 @@ def check_certificate(cert_path: str, ca_path: str = None,
         if attr.oid == x509.NameOID.COMMON_NAME:
             cn = attr.value
     record("subject CN present", bool(cn),
-           "subject has no CommonName — third-party identity is derived from CN"
+           "subject has no CommonName — integration identity is derived from CN"
            if not cn else f"CN={cn}")
 
     # 4. Validity period
@@ -184,7 +184,7 @@ def print_report(cert_path: str, results: tuple, ca_path: str = None, crl_path: 
 def main(argv=None) -> int:
     parser = argparse.ArgumentParser(
         prog="python -m agent_registry.cert_check",
-        description="Pre-check a third-party client certificate before integration")
+        description="Pre-check a integration client certificate before integration")
     parser.add_argument("certificate", help="client certificate file (PEM/DER)")
     parser.add_argument("--ca", default=None,
                         help="trusted CA bundle (PEM), e.g. etc/ssl/trust.cer")
