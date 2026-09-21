@@ -407,7 +407,7 @@ async def _maybe_audit_read(op_name: OperationName, details: dict, client_ip: st
                             caller: str = ''):
     """Audit a main-port read operation when audit.read_operations is enabled.
 
-    Third-party port reads are always audited (see third_party/app.py); main
+    Integration port reads are always audited (see integration/app.py); main
     port reads default to not audited to keep high-frequency query traffic
     from flooding the audit log.
     """
@@ -643,7 +643,7 @@ async def _process_register_cards(
         agent_cards: list, client_ip: str, owner: Optional[str],
         registry: RegistryCore, signature_validator: AgentCardSignatureValidator,
         registry_signer: Optional[AgentCardSigner], caller: str = ''):
-    """Shared registration flow (main port and third-party port): validate, sign, register each card."""
+    """Shared registration flow (main port and integration port): validate, sign, register each card."""
     total_cards = len(agent_cards)
     registered_results = []
     async with semaphore_guard(register_semaphore):
@@ -791,7 +791,7 @@ async def _process_update_cards(
         agent_cards: list, client_ip: str, name: str, organization: str, owner: Optional[str],
         signature_validator: AgentCardSignatureValidator, registry_signer: Optional[AgentCardSigner],
         caller: str = ''):
-    """Shared update flow (main port and third-party port): validate, sign, update each card."""
+    """Shared update flow (main port and integration port): validate, sign, update each card."""
     total_cards = len(agent_cards)
     updated_results = []
     async with semaphore_guard(update_semaphore):
