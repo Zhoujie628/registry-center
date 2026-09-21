@@ -53,6 +53,10 @@ class OperationName:
     DELETE_TAG = "Delete Tag"
     LIST_TAGS = "List Tags"
     GENERATE_CERTIFICATE = "Generate Certificate"
+    AUTH_BAN = "Authentication Ban"
+    CREATE_SUBSCRIPTION = "Create Subscription"
+    DELETE_SUBSCRIPTION = "Delete Subscription"
+    PULL_AUDIT_RECORDS = "Pull Audit Records"
 
 
 class OperatorObject:

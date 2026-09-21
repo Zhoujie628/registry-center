@@ -368,21 +368,52 @@ async def security_middleware(request: Request, call_next):
 
 
 # ---------- Routes ----------
-async def _audit_result(op_name: OperationName, success: bool, details: dict, client_ip: str):
-    """Log audit entry for operation result."""
+async def _audit_result(op_name: OperationName, success: bool, details: dict, client_ip: str,
+                        caller: str = ''):
+    """Log an audit result attributed to a verified caller identity."""
     await audit_handle.handle({
         "operation_name": op_name,
         "level": LogLevel.MINOR,
         "result": OperationResult.SUCCESS if success else OperationResult.FAILURE,
         "object_name": OperatorObject.AGENT,
         "details": details,
-        "client_ip": client_ip
+        "client_ip": client_ip,
+        "user_name": caller
     })
 
 
-async def _audit_failure(op_name: OperationName, details: dict, client_ip: str):
+async def _audit_failure(op_name: OperationName, details: dict, client_ip: str,
+                         caller: str = ''):
     """Log audit entry for operation failure."""
-    await _audit_result(op_name, False, details, client_ip)
+    await _audit_result(op_name, False, details, client_ip, caller)
+
+
+def _verified_caller(owner: Optional[str]) -> str:
+    """Audit identity for main-port operations, gated on client-cert verification.
+
+    The X-SSL-Client-DN header is client-forgeable when the listener runs
+    without mTLS; attributing audit records to it would poison the trail.
+    Only deployments with verify_client enabled (mTLS here or a trusted
+    proxy) contribute an identity; otherwise records stay unattributed.
+    """
+    if not owner:
+        return ''
+    if str(config.get('verify_client', 'true')).lower() == 'false':
+        return ''
+    return owner
+
+
+async def _maybe_audit_read(op_name: OperationName, details: dict, client_ip: str,
+                            caller: str = ''):
+    """Audit a main-port read operation when audit.read_operations is enabled.
+
+    Third-party port reads are always audited (see third_party/app.py); main
+    port reads default to not audited to keep high-frequency query traffic
+    from flooding the audit log.
+    """
+    if str(config.get('audit.read_operations', 'false')).lower() != 'true':
+        return
+    await _audit_result(op_name, True, details, client_ip, caller)
 
 
 def _get_owner_from_request(request: Request) -> Optional[str]:
@@ -467,21 +498,22 @@ async def _verify_owner_permission(
     return current_owner
 
 
-async def _check_agent_limit(registry: RegistryCore, client_ip: str, details: dict) -> None:
+async def _check_agent_limit(registry: RegistryCore, client_ip: str, details: dict,
+                             caller: str = '') -> None:
     """Check if registration count exceeds the limit, log and raise an exception if so."""
     if registry.count() >= _get_int_config(config, AGENT_NUM_MAX, 100):
         details["message"] = "Agent registration limit exceeded."
-        await _audit_failure(OperationName.REGISTER_AGENT, details, client_ip)
+        await _audit_failure(OperationName.REGISTER_AGENT, details, client_ip, caller)
         raise CustomHTTPException(status.HTTP_409_CONFLICT, "Agent registration limit exceeded.")
 
 
 async def _check_duplicate_agent(agent: AgentCard, registry: RegistryCore, client_ip: str,
-                                 details: dict) -> None:
+                                 details: dict, caller: str = '') -> None:
     """Check if an agent with same (name, organization) already exists, log and raise if found."""
     key = make_agent_key(agent.name, agent.provider.organization)
     if key in registry.get_agents():
         details["message"] = "Registration skipped: duplicate agent."
-        await _audit_failure(OperationName.REGISTER_AGENT, details, client_ip)
+        await _audit_failure(OperationName.REGISTER_AGENT, details, client_ip, caller)
         raise CustomHTTPException(status.HTTP_409_CONFLICT,
                                   f"Registration skipped: duplicate agent ({agent.name}, {agent.provider.organization})")
 
@@ -522,6 +554,7 @@ async def _perform_registration(
         details: dict,
         initial_status: str = 'published',
         owner: Optional[str] = None,
+        caller: str = '',
 ) -> bool:
     """Execute the actual registration, handle ValueError and other exceptions, log accordingly."""
     try:
@@ -530,12 +563,12 @@ async def _perform_registration(
         return success
     except ValueError as e:
         details["message"] = str(e)
-        await _audit_failure(OperationName.REGISTER_AGENT, details, client_ip)
+        await _audit_failure(OperationName.REGISTER_AGENT, details, client_ip, caller)
         logger.error(f"Register agent failed: name={agent.name}, org={agent.provider.organization}, reason={e}")
         raise CustomHTTPException(status.HTTP_400_BAD_REQUEST, str(e)) from e
     except Exception as e:
         details["message"] = "Internal server error"
-        await _audit_failure(OperationName.REGISTER_AGENT, details, client_ip)
+        await _audit_failure(OperationName.REGISTER_AGENT, details, client_ip, caller)
         logger.exception(f"Unexpected error in register: name={agent.name}, org={agent.provider.organization}")
         raise CustomHTTPException(status.HTTP_500_INTERNAL_SERVER_ERROR,"Internal server error") from e
 
@@ -547,22 +580,23 @@ async def _perform_update(
         data: dict,
         details: dict,
         owner: Optional[str] = None,
+        caller: str = '',
 ) -> bool:
     """Execute the actual update, handle ValueError and other exceptions, log accordingly."""
     try:
         update_handle = HandlerRegistry.get_handler(InterfaceType.UPDATE)
         success = await update_handle.handle(name, organization, data, owner=owner)
         if success:
-            await _audit_result(OperationName.UPDATE_AGENT, True, details, client_ip)
+            await _audit_result(OperationName.UPDATE_AGENT, True, details, client_ip, caller)
         return success
     except ValueError as e:
         details["message"] = str(e)
-        await _audit_failure(OperationName.UPDATE_AGENT, details, client_ip)
+        await _audit_failure(OperationName.UPDATE_AGENT, details, client_ip, caller)
         logger.error(f"Update agent failed: name={name}, org={organization}, reason={e}")
         raise CustomHTTPException(status.HTTP_400_BAD_REQUEST, str(e)) from e
     except Exception as e:
         details["message"] = "Internal server error"
-        await _audit_failure(OperationName.UPDATE_AGENT, details, client_ip)
+        await _audit_failure(OperationName.UPDATE_AGENT, details, client_ip, caller)
         logger.exception(f"Unexpected error in update: name={name}, org={organization}")
         raise CustomHTTPException(status.HTTP_500_INTERNAL_SERVER_ERROR,"Internal server error") from e
 
@@ -600,6 +634,17 @@ async def register_agent(
     authenticate_handle = HandlerRegistry.get_handler(InterfaceType.AUTHENTICATE)
     await authenticate_handle.handle(client_ip, request)
 
+    return await _process_register_cards(
+        agent_cards, client_ip, owner, registry, signature_validator, registry_signer,
+        caller=_verified_caller(owner))
+
+
+async def _process_register_cards(
+        agent_cards: list, client_ip: str, owner: Optional[str],
+        registry: RegistryCore, signature_validator: AgentCardSignatureValidator,
+        registry_signer: Optional[AgentCardSigner], caller: str = ''):
+    """Shared registration flow (main port and third-party port): validate, sign, register each card."""
+    total_cards = len(agent_cards)
     registered_results = []
     async with semaphore_guard(register_semaphore):
         for index, agent_card in enumerate(agent_cards, start=1):
@@ -613,20 +658,20 @@ async def register_agent(
                 "url": agent.provider.url,
             }
             try:
-                await _check_agent_limit(registry, client_ip, details)
-                await _check_duplicate_agent(agent, registry, client_ip, details)
+                await _check_agent_limit(registry, client_ip, details, caller)
+                await _check_duplicate_agent(agent, registry, client_ip, details, caller)
                 try:
                     validate_agent_card(agent)
                 except HTTPException as e:
                     details["message"] = e.detail
-                    await _audit_failure(OperationName.REGISTER_AGENT, details, client_ip)
+                    await _audit_failure(OperationName.REGISTER_AGENT, details, client_ip, caller)
                     raise CustomHTTPException(
                         e.status_code, f"Card {index}/{total_cards} ({agent.name}): {e.detail}") from e
 
                 signature_result = signature_validator.validate_agent_card(agent)
                 if not signature_result.is_valid:
                     details["message"] = signature_result.error_message
-                    await _audit_failure(OperationName.REGISTER_AGENT, details, client_ip)
+                    await _audit_failure(OperationName.REGISTER_AGENT, details, client_ip, caller)
                     raise CustomHTTPException(
                         status.HTTP_401_UNAUTHORIZED,
                         f"Card {index}/{total_cards} ({agent.name}): "
@@ -641,13 +686,13 @@ async def register_agent(
                 approval_enabled = config.get('agent_approval_enabled', 'false')
                 initial_status = 'registered' if approval_enabled == 'true' else 'published'
 
-                result = await _perform_registration(agent, client_ip, details, initial_status=initial_status, owner=owner)
+                result = await _perform_registration(agent, client_ip, details, initial_status=initial_status, owner=owner, caller=caller)
                 if not result:
                     raise CustomHTTPException(
                         status.HTTP_409_CONFLICT,
                         f"Agent '{agent.name}' already exists in organization '{agent.provider.organization}'"
                     )
-                await _audit_result(OperationName.REGISTER_AGENT, result, details, client_ip)
+                await _audit_result(OperationName.REGISTER_AGENT, result, details, client_ip, caller)
 
                 duration_ms = int((time.perf_counter() - card_started) * 1000)
                 logger.info(
@@ -689,6 +734,9 @@ async def list_agents_exact(
     logger.info(f"Query agents request: name={name}, org={organization}, client={client_ip}")
     authenticate_handle = HandlerRegistry.get_handler(InterfaceType.AUTHENTICATE)
     await authenticate_handle.handle(client_ip, request)
+    await _maybe_audit_read(OperationName.QUERY_AGENT,
+                            {"name": name or '', "organization": organization or ''},
+                            client_ip, caller=_verified_caller(_get_owner_from_request(request)))
 
     async with semaphore_guard(query_semaphore):
         query_handle = HandlerRegistry.get_handler(InterfaceType.QUERY)
@@ -734,6 +782,17 @@ async def update_agent(
     authenticate_handle = HandlerRegistry.get_handler(InterfaceType.AUTHENTICATE)
     await authenticate_handle.handle(client_ip, request)
 
+    return await _process_update_cards(
+        agent_cards, client_ip, name, organization, owner, signature_validator, registry_signer,
+        caller=_verified_caller(owner))
+
+
+async def _process_update_cards(
+        agent_cards: list, client_ip: str, name: str, organization: str, owner: Optional[str],
+        signature_validator: AgentCardSignatureValidator, registry_signer: Optional[AgentCardSigner],
+        caller: str = ''):
+    """Shared update flow (main port and third-party port): validate, sign, update each card."""
+    total_cards = len(agent_cards)
     updated_results = []
     async with semaphore_guard(update_semaphore):
         for index, agent_card in enumerate(agent_cards, start=1):
@@ -750,14 +809,14 @@ async def update_agent(
                     validate_agent_card(agent_data)
                 except HTTPException as e:
                     details["message"] = e.detail
-                    await _audit_failure(OperationName.UPDATE_AGENT, details, client_ip)
+                    await _audit_failure(OperationName.UPDATE_AGENT, details, client_ip, caller)
                     raise CustomHTTPException(
                         e.status_code, f"Card {index}/{total_cards} ({agent_data.name}): {e.detail}") from e
 
                 signature_result = signature_validator.validate_agent_card(agent_data)
                 if not signature_result.is_valid:
                     details["message"] = signature_result.error_message
-                    await _audit_failure(OperationName.UPDATE_AGENT, details, client_ip)
+                    await _audit_failure(OperationName.UPDATE_AGENT, details, client_ip, caller)
                     raise CustomHTTPException(
                         status.HTTP_401_UNAUTHORIZED,
                         f"Card {index}/{total_cards} ({agent_data.name}): "
@@ -770,7 +829,7 @@ async def update_agent(
                     logger.info(f"Registry signature added for agent: card={index}/{total_cards}, name={agent_data.name}")
 
                 data = MessageToDict(agent_data, preserving_proto_field_name=True)
-                success = await _perform_update(client_ip, name, organization, data, details, owner=owner)
+                success = await _perform_update(client_ip, name, organization, data, details, owner=owner, caller=caller)
                 if not success:
                     raise CustomHTTPException(status.HTTP_404_NOT_FOUND, "Agent not found")
 
@@ -817,7 +876,7 @@ async def deregister_agent(
     async with semaphore_guard(deregister_semaphore):
         deregister_handle = HandlerRegistry.get_handler(InterfaceType.DEREGISTER)
         success = await deregister_handle.handle(name, organization, owner=owner)
-        await _audit_result(OperationName.DEREGISTER_AGENT, success, details, client_ip)
+        await _audit_result(OperationName.DEREGISTER_AGENT, success, details, client_ip, caller=_verified_caller(owner))
         if not success:
             raise CustomHTTPException(status.HTTP_404_NOT_FOUND, "Agent not found")
         logger.info(f"Deregister agent success: name={name}, org={organization}")
@@ -842,6 +901,9 @@ async def retrieve_agents_by_task(
     logger.info(f"Retrieve agents request: task='{task}', top_n={top_n}, client={client_ip}")
     authenticate_handle = HandlerRegistry.get_handler(InterfaceType.AUTHENTICATE)
     await authenticate_handle.handle(client_ip, request)
+    await _maybe_audit_read(OperationName.RETRIEVE_AGENT,
+                            {"task": str(task)[:200]},
+                            client_ip, caller=_verified_caller(_get_owner_from_request(request)))
 
     async with semaphore_guard(retrieve_semaphore):
         retrieve_handle = HandlerRegistry.get_handler(InterfaceType.RETRIEVE)
@@ -869,6 +931,9 @@ async def get_agent(
     logger.info(f"Get agent request: name={name}, org={organization}, client={client_ip}")
     authenticate_handle = HandlerRegistry.get_handler(InterfaceType.AUTHENTICATE)
     await authenticate_handle.handle(client_ip, request)
+    await _maybe_audit_read(OperationName.GET_AGENT,
+                            {"name": name, "organization": organization},
+                            client_ip, caller=_verified_caller(_get_owner_from_request(request)))
 
     async with semaphore_guard(get_semaphore):
         get_handle = HandlerRegistry.get_handler(InterfaceType.GET)

@@ -124,6 +124,11 @@ def _resolve_env_vars(conf: dict) -> dict:
     return resolved
 
 
+def resolve_env_vars(conf: dict) -> dict:
+    """Public wrapper: resolve ${ENV_VAR:default} placeholders in a conf dict."""
+    return _resolve_env_vars(conf)
+
+
 def get_persistence_conf() -> dict:
     """
     Read persistence configuration file with environment variable substitution.

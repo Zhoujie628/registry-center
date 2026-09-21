@@ -32,6 +32,8 @@ from agent_registry.internal.registry_center_internal_service import RegistryCen
 from agent_registry.internal.tcp_internal_service import TCPInternalService
 from agent_registry.persistence.precheck import verify_storage_ready
 from agent_registry.server import app
+from agent_registry.third_party.listener import start_third_party_access, stop_third_party_access
+from agent_registry.third_party.audit_sink import start_audit_sink, stop_audit_sink
 from common.cert.cert_validater import CertValidator
 from common.custom.custom_handle import HandlerRegistry
 from common.custom.interface_type import InterfaceType
@@ -154,6 +156,8 @@ def start_internal_service(server_config):
 
 def stop_internal_service():
     global _internal_service
+    stop_third_party_access()
+    stop_audit_sink()
     if _internal_service:
         try:
             _internal_service.stop()
@@ -183,6 +187,13 @@ def main():
     verify_storage_ready()
 
     start_internal_service(server_config)
+
+    # Third-party access port: disabled by default, enabled via third_party.enabled
+    start_third_party_access(server_config)
+
+    # Audit MySQL sink: disabled by default, enabled via audit.mysql.enabled
+    from common.util.app_config import get_persistence_conf
+    start_audit_sink(get_persistence_conf())
 
     is_https = server_config.get("enable_https", True)
     is_enable_https = str(is_https).lower() == 'true'
