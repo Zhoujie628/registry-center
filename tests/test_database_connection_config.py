@@ -94,12 +94,12 @@ def test_malformed_and_duplicate_json(tmp_path, profile, content):
         load_profile("mysql", profile, tmp_path)
 
 
-def test_legacy_path_never_silently_loaded(tmp_path, profile):
+def test_previous_location_never_silently_loaded(tmp_path, profile):
     path = tmp_path / "etc/conf/mysql_config.json"
     path.parent.mkdir(parents=True)
     path.write_text('{"password":"legacy-secret"}')
     with pytest.raises(DatabaseConfigError, match="migrate"):
-        load_profile("mysql", profile, tmp_path, legacy_paths=("etc/conf/mysql_config.json",))
+        load_profile("mysql", profile, tmp_path, previous_locations=("etc/conf/mysql_config.json",))
 
 
 def test_migration_preserves_original_and_is_repeatable(tmp_path):
