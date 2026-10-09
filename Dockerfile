@@ -99,6 +99,7 @@ COPY bin/entrypoint.sh /opt/registry-center/bin/entrypoint.sh
 #   etc/ssl/*                              (server.cer, server_key.pem, cert_pwd, trust.cer)
 COPY etc/conf/server.conf.example /opt/registry-center/etc/conf/server.conf
 COPY etc/conf/persistence.conf.example /opt/registry-center/etc/conf/persistence.conf
+COPY etc/conf/db/ /opt/registry-center/etc/conf/db/
 COPY etc/conf/server.properties etc/conf/log_config.conf /opt/registry-center/etc/conf/
 
 RUN useradd --uid 10001 -m appuser \

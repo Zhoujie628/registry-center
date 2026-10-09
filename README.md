@@ -279,3 +279,6 @@ This project is delivered as **source code only**. Users are responsible for:
 ## License
 
 This project is licensed under the **Apache License 2.0**. See [LICENSE](LICENSE) for details.
+
+
+数据库连接统一使用 `etc/conf/db/` 模板，密码由 `.env` / 环境变量引用；参见 [Database configuration / 数据库配置](docs/database-configuration.md)。旧连接配置需要显式迁移，不再作为运行时来源。

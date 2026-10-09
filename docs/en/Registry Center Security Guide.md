@@ -235,7 +235,7 @@ In addition to the local audit file, `audit.mysql.*` in `etc/conf/persistence.co
 - Disabled by default (`audit.mysql.enabled=false`).<br>
 - The local audit file remains the authoritative record; a failed archive only logs a warning and degrades to local-only without blocking business requests.<br>
 - `REGISTRY_AUDIT_MYSQL_*` overrides target keys declared in the shipped `persistence.conf.example`, even if omitted or commented out in the deployment file; template values are not imported as defaults.<br>
-- `audit.mysql.password` accepts an encrypted value (`enc:v1:` prefix) or plaintext; empty means no password.<br>
+- Connection credentials use `etc/conf/db/audit_mysql.json` and its `password_env` reference; legacy encrypted values require explicit migration.<br>
 
 ## AgentCard Content Security
 
@@ -480,3 +480,6 @@ Existing `server.conf` is never rewritten; update old signing settings manually 
 | Data Theft (11 items) | steal keys, steal secret keys<br>steal passwords, steal credentials<br>illegally obtain keys, illegally obtain passwords<br>illegally obtain credentials<br>steal data, data exfiltration<br>data leak, steal privacy<br>steal private data, illegally obtain privacy |
 | Network Attack (6 items) | network attack, network penetration<br>network intrusion, port scan<br>vulnerability scan, attack scan |
 | Command Execution (7 items) | execute code, execute command<br>run command, execute shell<br>remote execution, code execution, command execution |
+
+
+数据库连接规范已更新 / Connection configuration now uses [etc/conf/db profiles](../database-configuration.md). `persistence.conf` retains the selector and audit policies only; legacy connection sections must be explicitly migrated.

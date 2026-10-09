@@ -3,7 +3,7 @@
 ## Image and configuration / 镜像与配置
 
 Build with `docker build -t registry-center:local .`. The image includes only
-backend code and public `etc/conf/*.example` templates. Local `server.conf`,
+backend code and public `etc/conf/*.example` and `etc/conf/db/*.json.template` templates. Local `server.conf`,
 `persistence.conf`, certificates, signing keys, cipher keys, credentials, model
 configuration, `.env`, reviews and frontend dependencies are not build inputs.
 `.gcloudignore` applies the same secret exclusions to Cloud Build uploads.
@@ -128,3 +128,5 @@ CRLF repair), tests `init`, invalid argv/identity rejection, platform port
 precedence, real HTTP CRUD and read-only mTLS startup/ownership/health probes.
 The Ubuntu `container-smoke` CI job executes this test. Bash contract/unit tests
 are useful locally but are not proof that the Linux image built or ran.
+
+Database connections use [the unified db directory](database-configuration.md). Mount db read-only; DB_* values are consumed directly by Python, not written into persistence.conf. The enclosing server config mount remains writable for entrypoint overrides.

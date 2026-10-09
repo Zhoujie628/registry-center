@@ -288,3 +288,6 @@ agent-registry> tag delete --id <uuid>            # 删除标签
 ## 许可证
 
 本项目基于 **Apache License 2.0** 开源协议。详见 [LICENSE](LICENSE)。
+
+
+数据库连接统一使用 `etc/conf/db/` 模板，密码由 `.env` / 环境变量引用；参见 [Database configuration / 数据库配置](docs/database-configuration.md)。旧连接配置需要显式迁移，不再作为运行时来源。

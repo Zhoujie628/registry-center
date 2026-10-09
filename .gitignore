@@ -24,3 +24,5 @@ reviews/
 
 # Local model config (credential-free; secrets come from env vars)
 etc/config/models.yaml
+.env.database-*
+etc/conf/db/*.json

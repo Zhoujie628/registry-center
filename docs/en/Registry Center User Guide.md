@@ -259,10 +259,6 @@ agent-registry>
 | Configuration Item | Description | Default |
 |--------------------|-------------|---------|
 | persistence.mode | Storage mode (file/postgresql/sqlite/gauss/mysql) | file |
-| postgresql.* | PostgreSQL connection: host/port/name/username/password/pool.min/pool.max/connect_timeout | 127.0.0.1:5432 |
-| sqlite.path | SQLite database file path | data/agents.db |
-| gauss.* | GaussDB connection: host/port/database/username/password/pool.min/pool.max/connect_timeout | localhost:5432 |
-| mysql.* | MySQL connection: host/port/name/username/password/pool.min/pool.max/connect_timeout | localhost:3306 |
 
 ### Operating Parameters and Business Policies (etc/conf/server.properties)
 
@@ -391,3 +387,5 @@ Yes. The Registry Center supports Windows environments for development and debug
 4. Restart the service after changes — model clients are cached per process
 
 See [Development Guide Appendix 4](Registry%20Center%20Development%20Guide.md) and [`models.yaml.example`](../../etc/config/models.yaml.example) for the fields and protocols, and [Configure the Model File](Registry%20Center%20GCP%20Containerized%20Deployment%20Guide.md) for container deployments.
+
+数据库连接规范已更新 / Connection configuration now uses [etc/conf/db profiles](../database-configuration.md). `persistence.conf` retains the selector and audit policies only; legacy connection sections must be explicitly migrated.
