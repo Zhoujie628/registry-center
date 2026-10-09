@@ -71,13 +71,14 @@ def test_every_public_declaration_maps_even_when_missing_from_config(runtime, mo
     app_config.load_configs(str(runtime / template), declared)
     for key in declared:
         with monkeypatch.context() as case:
-            case.setenv(app_config.canonical_env_name(key), 'synthetic-override')
+            value = 'file' if key == 'persistence.mode' else 'synthetic-override'
+            case.setenv(app_config.canonical_env_name(key), value)
             # Only key mapping is under test; typed consumption belongs to the
             # startup/auth/storage tests. No real credentials or DB connection.
             loader = (app_config.get_conf if template == 'server.conf.example'
                       else app_config.get_persistence_conf)
             conf = loader()
-            assert conf[key] == 'synthetic-override'
+            assert conf[key] == value
             if '.' in key:
                 assert key.replace('.', '_') not in conf
 

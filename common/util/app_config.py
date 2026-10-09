@@ -199,12 +199,13 @@ def get_persistence_conf() -> dict:
     Read selectors/policies and resolve only active connection profiles.
     """
     root_path = get_root_path()
-    from common.util.database_config import environment, config_directory, DatabaseConfigError
+    from common.util.database_config import environment, DatabaseConfigError
+    from common.util.persistence_mode import validate_persistence_mode
     env = environment(root_path)
     persistence_conf_path = os.path.join(root_path, "etc", "conf", "persistence.conf")
     conf = load_conf_as_dict(persistence_conf_path)
     conf = _resolve_env_vars(conf, env)
-    from common.util.connection_profiles import PROFILES, PREFIXES, PRIMARY_PROFILES, provider_config
+    from common.util.connection_profiles import PROFILES, PRIMARY_PROFILES, provider_config
     connection_vars = {
         alias for profile in PROFILES.values()
         for aliases in (*profile.env.values(), *profile.secrets.values())
@@ -223,8 +224,8 @@ def get_persistence_conf() -> dict:
                     value = source[name]
                     break
         return value
-    mode = control_value(('REGISTRY_PERSISTENCE_MODE', 'PERSISTENCE_MODE'),
-                         conf.get('persistence.mode', 'file'))
+    mode = validate_persistence_mode(control_value(
+        ('REGISTRY_PERSISTENCE_MODE', 'PERSISTENCE_MODE'), conf.get('persistence.mode', 'file')))
     conf['persistence.mode'] = mode
     for field in ('enabled', 'batch_size', 'flush_interval'):
         key = 'audit.mysql.' + field

@@ -61,7 +61,7 @@ for _name, _port in (("postgresql", 5432), ("mysql", 3306), ("gaussdb", 5432), (
     PROFILES[_name] = _sql_profile(_name, _port, primary=_name != "audit_mysql")
 PROFILES["sqlite"] = DatabaseProfile(
     {"path": "data/agents.db"}, {"path": ("REGISTRY_SQLITE_PATH", "SQLITE_PATH")},
-    required=("path",), paths=("path",))
+    required=("path",))
 PROFILES["neo4j"] = DatabaseProfile(
     {"uri": "bolt://127.0.0.1:7687", "user": "neo4j"},
     {"uri": ("REGISTRY_NEO4J_URI", "NEO4J_URI"),
@@ -77,6 +77,11 @@ PROFILES["milvus"] = DatabaseProfile(
 def load_connection_config(name, root=None):
     root = root or get_root_path()
     config = load_profile(name, PROFILES[name], root)
+    if name == "sqlite":
+        from pathlib import Path
+        # :memory: is a SQLite connection target, not a relative filename.
+        if config["path"] != ":memory:" and not Path(config["path"]).is_absolute():
+            config["path"] = str(Path(root) / config["path"])
     if name == "milvus":
         from pathlib import Path
         if "://" not in config["uri"] and not Path(config["uri"]).is_absolute():
