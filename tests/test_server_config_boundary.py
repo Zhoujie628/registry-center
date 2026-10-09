@@ -130,10 +130,11 @@ def test_integration_examples_respect_public_policy_ownership(document):
 def test_audit_sink_keys_are_public_and_environment_overridable(runtime, monkeypatch):
     """A shipped key must appear in the public template, or env overrides miss it."""
     template = read(REPO / 'etc/conf/persistence.conf.example')
-    assert {'audit.mysql.enabled', 'audit.mysql.host', 'audit.mysql.password',
+    assert {'audit.mysql.enabled',
             'audit.mysql.batch_size'} <= template.keys()
     (runtime / 'persistence.conf').write_bytes(
         (REPO / 'etc/conf/persistence.conf.example').read_bytes())
     assert app_config.get_persistence_conf()['audit.mysql.enabled'] == 'false'
     monkeypatch.setenv('REGISTRY_AUDIT_MYSQL_ENABLED', 'true')
+    monkeypatch.setenv('AUDIT_MYSQL_PASSWORD', 'fixture')
     assert app_config.get_persistence_conf()['audit.mysql.enabled'] == 'true'

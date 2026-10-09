@@ -1,7 +1,0 @@
-{
-   "milvus": {
-     "description": "Milvus DB Service",
-     "uri": "./milvus_demo.db",
-     "version": "milvus-lite"
-   }
- }

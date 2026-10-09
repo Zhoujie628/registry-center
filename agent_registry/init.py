@@ -395,102 +395,32 @@ class InitCommand:
         os.chmod(self.config_file, 0o600)
 
     def config_persistence(self) -> dict:
-        config = {}
-
-        allowed_modes = ['file', 'postgresql', 'sqlite', 'gauss', 'mysql']
-        default_mode = self.existing_persistence_config.get('persistence.mode', 'file')
-        
+        """Configure a selected profile; ask for a secret variable, not its value."""
+        from common.util.connection_profiles import PROFILES
+        from common.util.database_config import read_profile_file
+        allowed = ('file', 'postgresql', 'mysql', 'gauss', 'sqlite')
+        default = self.existing_persistence_config.get('persistence.mode', 'file')
         while True:
-            mode_input = input(
-                f"\nSelect storage mode persistence.mode ({'/'.join(allowed_modes)}, default: {default_mode}): "
-            ).strip()
-            
-            mode = mode_input or default_mode
-            
-            if mode in allowed_modes:
-                config['persistence.mode'] = mode
+            mode = input(f"Storage mode ({'/'.join(allowed)}, default: {default}): ").strip() or default
+            if mode in allowed:
                 break
-            else:
-                print(f"Error: Invalid storage mode '{mode}', allowed modes: {', '.join(allowed_modes)}")
-
-        if config['persistence.mode'] == 'postgresql':
-            print("\nConfigure PostgreSQL database connection:")
-            default_host = self.existing_persistence_config.get('postgresql.host', 'localhost')
-            host_input = input(f"Enter database host postgresql.host (default: {default_host}): ").strip()
-            config['postgresql.host'] = host_input or default_host
-
-            default_port = self.existing_persistence_config.get('postgresql.port', '5432')
-            port_input = input(f"Enter database port postgresql.port (default: {default_port}): ").strip()
-            config['postgresql.port'] = port_input or default_port
-
-            default_name = self.existing_persistence_config.get('postgresql.name', 'a2a_registry')
-            name_input = input(f"Enter database name postgresql.name (default: {default_name}): ").strip()
-            config['postgresql.name'] = name_input or default_name
-
-            default_username = self.existing_persistence_config.get('postgresql.username', 'a2a_user')
-            username_input = input(f"Enter database user postgresql.username (default: {default_username}): ").strip()
-            config['postgresql.username'] = username_input or default_username
-
-            password_input = getpass.getpass(f"Enter database password postgresql.password: ").strip()
-            if password_input:
-                config['postgresql.password'] = encrypt(password_input)
-            else:
-                config['postgresql.password'] = self.existing_persistence_config.get('postgresql.password', '')
-
-        if config['persistence.mode'] == 'sqlite':
-            print("\nConfigure SQLite database:")
-            default_path = self.existing_persistence_config.get('sqlite.path', 'data/agents.db')
-            path_input = input(f"Enter database file path sqlite.path (default: {default_path}): ").strip()
-            config['sqlite.path'] = path_input or default_path
-
-        if config['persistence.mode'] == 'gauss':
-            print("\nConfigure GaussDB database connection:")
-            default_host = self.existing_persistence_config.get('gauss.host', 'localhost')
-            host_input = input(f"Enter database host gauss.host (default: {default_host}): ").strip()
-            config['gauss.host'] = host_input or default_host
-
-            default_port = self.existing_persistence_config.get('gauss.port', '5432')
-            port_input = input(f"Enter database port gauss.port (default: {default_port}): ").strip()
-            config['gauss.port'] = port_input or default_port
-
-            default_database = self.existing_persistence_config.get('gauss.database', 'a2a_registry')
-            database_input = input(f"Enter database name gauss.database (default: {default_database}): ").strip()
-            config['gauss.database'] = database_input or default_database
-
-            default_username = self.existing_persistence_config.get('gauss.username', 'a2a_user')
-            username_input = input(f"Enter database user gauss.username (default: {default_username}): ").strip()
-            config['gauss.username'] = username_input or default_username
-
-            password_input = getpass.getpass(f"Enter database password gauss.password: ").strip()
-            if password_input:
-                config['gauss.password'] = encrypt(password_input)
-            else:
-                config['gauss.password'] = self.existing_persistence_config.get('gauss.password', '')
-
-        if config['persistence.mode'] == 'mysql':
-            print("\nConfigure MySQL database connection:")
-            default_host = self.existing_persistence_config.get('mysql.host', 'localhost')
-            host_input = input(f"Enter database host mysql.host (default: {default_host}): ").strip()
-            config['mysql.host'] = host_input or default_host
-
-            default_port = self.existing_persistence_config.get('mysql.port', '3306')
-            port_input = input(f"Enter database port mysql.port (default: {default_port}): ").strip()
-            config['mysql.port'] = port_input or default_port
-
-            default_name = self.existing_persistence_config.get('mysql.name', 'registry_center')
-            name_input = input(f"Enter database name mysql.name (default: {default_name}): ").strip()
-            config['mysql.name'] = name_input or default_name
-
-            default_username = self.existing_persistence_config.get('mysql.username', 'a2a_user')
-            username_input = input(f"Enter database user mysql.username (default: {default_username}): ").strip()
-            config['mysql.username'] = username_input or default_username
-
-            password_input = getpass.getpass(f"Enter database password mysql.password: ").strip()
-            if password_input:
-                config['mysql.password'] = encrypt(password_input)
-            else:
-                config['mysql.password'] = self.existing_persistence_config.get('mysql.password', '')
-
+            print("Invalid storage mode")
+        config = {'persistence.mode': mode}
+        if mode == 'file':
+            return config
+        name = 'gaussdb' if mode == 'gauss' else mode
+        root = Path(self.persistence_config_file).resolve().parents[2]
+        profile = {**PROFILES[name].defaults, **read_profile_file(name, root)}
+        if any(key in profile for key in ('password', 'token')):
+            raise ValueError("Connection profiles must use secret variable references")
+        fields = ('path',) if name == 'sqlite' else ('host', 'port', 'database', 'user', 'password_env')
+        for key in fields:
+            fallback = profile.get(key, {'password_env': {
+                'postgresql': 'POSTGRES_PASSWORD', 'mysql': 'MYSQL_PASSWORD', 'gaussdb': 'GAUSS_PASSWORD'
+            }.get(name, '')}.get(key, ''))
+            profile[key] = input(f"{name}.{key} (default: {fallback}): ").strip() or fallback
+        config['_connection_profile'] = (name, profile)
+        print("Set the password variable in the environment or project .env before starting.")
         return config
 
     def _get_persistence_config_header(self) -> str:
@@ -515,6 +445,20 @@ class InitCommand:
 """
 
     def save_persistence_config_to_file(self, config: dict):
+        import json
+        config = dict(config)
+        selected = config.pop('_connection_profile', None)
+        if selected:
+            from common.util.database_config import config_directory
+            name, profile = selected
+            root = Path(self.persistence_config_file).resolve().parents[2]
+            directory = config_directory(root)
+            directory.mkdir(parents=True, exist_ok=True)
+            target = directory / (name + '.json')
+            with target.open('w', encoding='utf-8') as stream:
+                json.dump(profile, stream, indent=2)
+                stream.write('\n')
+            os.chmod(target, 0o600)
         config_dir = os.path.dirname(self.persistence_config_file)
         os.makedirs(config_dir, exist_ok=True)
 

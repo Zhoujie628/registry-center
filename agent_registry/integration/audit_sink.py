@@ -26,9 +26,9 @@ that batches inserts. Design guarantees:
   database unavailability degrades to local-only plus a rate-limited
   warning — business requests are never blocked by the sink.
 - The database account must be a dedicated, minimal-privilege account;
-  the password supports cipher_util encryption and the connection uses TLS
+  the resolved password is opaque; the connection uses TLS
   when the server supports it (ssl_disabled not set).
-- Configuration lives in persistence.conf (audit.mysql.* keys).
+- Switch/batching live in persistence.conf; connection is db/audit_mysql.json.
 """
 
 import json
@@ -38,7 +38,6 @@ import time
 from typing import Dict, Optional
 
 from loguru import logger
-from common.util.cipher_util import decrypt
 
 _DDL = """
 CREATE TABLE IF NOT EXISTS integration_audit_records (
@@ -82,8 +81,9 @@ class AuditMySqlSink:
         self._thread: Optional[threading.Thread] = None
 
         password_raw = str(conf.get('audit.mysql.password', '') or '')
-        decrypted = decrypt(password_raw)
-        password = decrypted.decode('utf-8') if isinstance(decrypted, bytes) else decrypted
+        # Profile loader already resolved the secret. Do not interpret an opaque
+        # password as ciphertext; old encrypted configuration is migration-only.
+        password = password_raw
         self.connect_kwargs = dict(
             host=str(conf.get('audit.mysql.host', 'localhost')),
             port=int(conf.get('audit.mysql.port', 3306)),

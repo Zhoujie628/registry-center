@@ -50,3 +50,5 @@ reviews/
 .claude/
 .codex/
 .agents/
+.env.database-*
+etc/conf/db/*.json

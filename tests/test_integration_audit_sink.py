@@ -153,15 +153,11 @@ class TestAuditSinkUnit:
         sink.enqueue(ENTRY)  # fills the queue
         sink.enqueue(ENTRY)  # overflow -> dropped, no raise
 
-    def test_password_supports_encryption(self, sink_state, monkeypatch):
-        """Encrypted password flows through cipher_util.decrypt."""
-        import agent_registry.integration.audit_sink as sink_module
-        captured = {}
-        monkeypatch.setattr(sink_module, "decrypt",
-                            lambda v: b"decrypted_pwd" if v == "cipher_text" else v.encode())
+    def test_resolved_password_is_opaque(self, sink_state):
+        """Only the migration tool decrypts old configuration."""
         sink = AuditMySqlSink({"audit.mysql.enabled": "true",
-                               "audit.mysql.password": "cipher_text"})
-        assert sink.connect_kwargs["password"] == "decrypted_pwd"
+                               "audit.mysql.password": "enc:literal-not-ciphertext"})
+        assert sink.connect_kwargs["password"] == "enc:literal-not-ciphertext"
 
 
 class TestAuditSinkLive:

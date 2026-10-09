@@ -33,6 +33,7 @@ def run():
         directory = root / 'etc/conf'
         for template in ('server.conf.example', 'persistence.conf.example'):
             (directory / template).write_bytes((REPO / 'etc/conf' / template).read_bytes())
+        (directory / 'persistence.conf').write_text('persistence.mode=sqlite\n', encoding='utf-8')
         # File intentionally specifies the opposite TLS mode: only the documented
         # canonical environment override can select the listener tested below.
         override_config(root, {'enable_https': str(not https).lower()})

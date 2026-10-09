@@ -229,7 +229,9 @@ def test_migration_rejects_invalid_setting_without_writing(tmp_path):
     assert not models.exists()
 
 
-def test_legacy_json_migrates_directly_without_inline_secrets(tmp_path):
+def test_legacy_json_migrates_directly_without_inline_secrets(tmp_path, monkeypatch):
+    # The fixture tests its own dotenv, not the operator's process credentials.
+    monkeypatch.delenv("LLM_CHAT_API_KEY", raising=False)
     source, dotenv, models = tmp_path / "old.json", tmp_path / ".env", tmp_path / "models.yaml"
     profile = build_profile("openai", "chat", lambda _: None)
     source.write_text(json.dumps({"chat": {

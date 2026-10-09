@@ -573,17 +573,10 @@ Implement custom functionality through extended configuration, including storage
     Modify `etc/conf/persistence.conf`:
 
     ```properties
-    # File storage mode
-    persistence.mode=file
-
-    # PostgreSQL storage mode
-    persistence.mode=postgresql
-    postgresql.host=127.0.0.1
-    postgresql.port=5432
-    postgresql.name=registry_center
-    postgresql.username=postgres
-    postgresql.password=<encrypted_password>
-    ```
+persistence.mode=postgresql
+# Connection: etc/conf/db/postgresql.json
+# Copy its .json.template; set password_env in environment / root .env.
+```
 
 2. Configure security policy
 
@@ -634,25 +627,19 @@ The Registry Center supports pluggable persistence backends selected via `persis
 | gauss | Huawei GaussDB (PG-protocol compatible) | psycopg2 |
 | mysql | MySQL 5.7+ / 8.0 | PyMySQL + DBUtils |
 
-All SQL backends share one CRUD engine (`agent_registry/persistence/sql_backend.py`) and provide their dialect-specific SQL in `agent_registry/persistence/sql_queries.py`. Adding a new database type requires: a new query enum, a `SqlStorageBackend` subclass, a factory branch in `agent_registry/persistence/__init__.py`, and a config block in `persistence.conf`.
+All SQL backends share one CRUD engine (`agent_registry/persistence/sql_backend.py`) and provide their dialect-specific SQL in `agent_registry/persistence/sql_queries.py`. Adding a new database type requires: a new query enum, a `SqlStorageBackend` subclass, a factory branch in `agent_registry/persistence/__init__.py`, and a connection profile plus template in `etc/conf/db/`.
 
 In SQL mode, initialize the broadcast service with the same storage instance before writing Agent records: `initialize_broadcast_service(registry.storage, registry.persistence_mode)`. The normal server startup does this automatically. Embedded callers, CLI scripts, and tests must do it explicitly; otherwise writes fail before changing the record. If a broadcast singleton was created earlier with a file or memory outbox, startup fails rather than silently using a non-transactional outbox. File/vector modes do not require this SQL binding.
 
 ### Configuration example (MySQL)
 
-```
+```properties
 persistence.mode=mysql
-mysql.host=${MYSQL_HOST:localhost}
-mysql.port=${MYSQL_PORT:3306}
-mysql.name=${MYSQL_DATABASE:registry_center}
-mysql.username=${MYSQL_USER:a2a_user}
-mysql.password=${MYSQL_PASSWORD}
-mysql.pool.min=${MYSQL_POOL_MIN:5}
-mysql.pool.max=${MYSQL_POOL_MAX:20}
-mysql.connect_timeout=${MYSQL_CONNECT_TIMEOUT:10}
+# Connections: copy etc/conf/db/<profile>.json.template to <profile>.json.
+# Secrets: password_env references the process environment or root .env.
 ```
 
-`${ENV:default}` placeholders are resolved when the file is loaded, so any value can be overridden by an environment variable without editing the file. In containers, the common `DB_*` variables (`DB_HOST`, `DB_PORT`, `DB_NAME`, `DB_USERNAME`, `DB_PASSWORD`, `DB_POOL_MIN`, `DB_POOL_MAX`) are rewritten into the active backend's keys by `bin/entrypoint.sh` for postgresql/gauss/mysql; `SQLITE_PATH` works natively for sqlite.
+Container DB_* values are read directly by the Python connection profile. Connections live in etc/conf/db/; secrets remain in environment/.env and are never written into persistence.conf.
 
 ### Startup pre-check (fast fail)
 
@@ -1060,51 +1047,16 @@ the installation alongside the configuration files.
 | Configuration Item | Description | Default Value |
 |--------------------|-------------|---------------|
 | persistence.mode | Storage backend: `file`, `sqlite`, `postgresql`, `gauss` or `mysql` | file |
-| postgresql.host | PostgreSQL host (mode `postgresql`) | 127.0.0.1 |
-| postgresql.port | PostgreSQL TCP port | 5432 |
-| postgresql.name | PostgreSQL database name; created at startup if missing (the role needs CREATE privilege) | registry_center |
-| postgresql.username | PostgreSQL login role | `${DB_USERNAME:opena2a_t}` |
-| postgresql.password | PostgreSQL password (`enc:v1:...` or plaintext); empty means no password | `${DB_PASSWORD}` (empty) |
-| postgresql.pool.min | Connections opened at startup and kept warm; keep <= `pool.max` | 5 |
-| postgresql.pool.max | Hard cap on open connections; a checkout beyond it fails at once | 20 |
-| postgresql.pool.timeout | UNUSED: no code reads this key; the psycopg2 pool has no wait timeout | 30 (no effect) |
-| postgresql.connect_timeout | Seconds to wait for one connection attempt (TCP plus authentication, not queries) | `${PG_CONNECT_TIMEOUT:10}` |
-| sqlite.path | SQLite database file (mode `sqlite`) | `${SQLITE_PATH:data/agents.db}` |
-| gauss.host | GaussDB host (mode `gauss`) | `${GAUSS_HOST:localhost}` |
-| gauss.port | GaussDB TCP port | `${GAUSS_PORT:5432}` |
-| gauss.database | GaussDB database name; created at startup if missing | `${GAUSS_DATABASE:a2a_registry}` |
-| gauss.username | GaussDB login role | `${GAUSS_USER:a2a_user}` |
-| gauss.password | GaussDB password (`enc:v1:...` or plaintext); empty means no password | `${GAUSS_PASSWORD}` (empty) |
-| gauss.pool.min | Connections opened at startup and kept warm; keep <= `pool.max` | `${GAUSS_POOL_MIN:5}` |
-| gauss.pool.max | Hard cap on open connections; a checkout beyond it fails at once | `${GAUSS_POOL_MAX:20}` |
-| gauss.connect_timeout | Seconds to wait for one connection attempt (TCP plus authentication) | `${GAUSS_CONNECT_TIMEOUT:10}` |
-| mysql.host | MySQL host (mode `mysql`, MySQL 5.7+/8.0) | `${MYSQL_HOST:localhost}` |
-| mysql.port | MySQL TCP port | `${MYSQL_PORT:3306}` |
-| mysql.name | MySQL database name; created at startup if missing | `${MYSQL_DATABASE:registry_center}` |
-| mysql.username | MySQL login role | `${MYSQL_USER:a2a_user}` |
-| mysql.password | MySQL password (`enc:v1:...` or plaintext); empty means no password | `${MYSQL_PASSWORD}` (empty) |
-| mysql.pool.min | Idle connections opened at startup and kept cached; keep <= `pool.max` | `${MYSQL_POOL_MIN:5}` |
-| mysql.pool.max | Hard cap on open connections; a caller beyond it waits with no timeout | `${MYSQL_POOL_MAX:20}` |
-| mysql.connect_timeout | Seconds to wait for the TCP connect only (not the handshake or queries) | `${MYSQL_CONNECT_TIMEOUT:10}` |
 | audit.mysql.enabled | Archive integration audit records to the operator's MySQL sink | `${AUDIT_MYSQL_ENABLED:false}` |
-| audit.mysql.host | Host of the customer MySQL server | `${AUDIT_MYSQL_HOST:localhost}` |
-| audit.mysql.port | TCP port of the customer MySQL server | `${AUDIT_MYSQL_PORT:3306}` |
-| audit.mysql.name | Database that receives the `integration_audit_records` table | `${AUDIT_MYSQL_DATABASE:registry_center}` |
-| audit.mysql.username | Dedicated minimal-privilege account on that database | `${AUDIT_MYSQL_USERNAME:a2a_user}` |
-| audit.mysql.password | Password (`enc:v1:...` or plaintext); empty means no password | `${AUDIT_MYSQL_PASSWORD}` (empty) |
-| audit.mysql.connect_timeout | Seconds to wait for the TCP connect only (an accepted-but-stalled server is not bounded) | `${AUDIT_MYSQL_CONNECT_TIMEOUT:10}` |
 | audit.mysql.batch_size | Rows per INSERT batch (bounded by the 10000-entry queue) | `${AUDIT_MYSQL_BATCH_SIZE:50}` |
 | audit.mysql.flush_interval | Idle poll interval and pause after a failed write, in seconds (decimals allowed) | `${AUDIT_MYSQL_FLUSH_INTERVAL:2}` |
-| neo4j.uri | Bolt URI of the Neo4j instance; `neo4j://` enables cluster routing | `${NEO4J_URI:bolt://localhost:7687}` |
-| neo4j.username | Neo4j login name | `${NEO4J_USERNAME:neo4j}` |
-| neo4j.password | Neo4j password, used as-is (no `cipher_util` decryption); empty makes every graph call return 503 | `${NEO4J_PASSWORD}` (empty) |
 
 Note: archiving is disabled by default, the local audit file remains the authoritative
 record, and a failed archive only logs a warning and degrades to local-only. Keys
 declared in the shipped `persistence.conf.example` receive `REGISTRY_AUDIT_MYSQL_*`
 overrides even if omitted or commented out in `persistence.conf`; example values
 are not imported as defaults. Persistence file placeholders are resolved before
-`REGISTRY_*` overrides and password decryption.
+`REGISTRY_*` overrides. Connection secrets use password_env; legacy decryption is migration-only.
 
 #### server.properties Configuration Items (Operating Parameters and Business Policies)
 
@@ -1249,11 +1201,8 @@ Solutions:
 1. Modify `etc/conf/persistence.conf`:
 ```properties
 persistence.mode=postgresql
-postgresql.host=<your_host>
-postgresql.port=5432
-postgresql.name=registry_center
-postgresql.username=<your_username>
-postgresql.password=<encrypted_password>
+# Connections: copy etc/conf/db/<profile>.json.template to <profile>.json.
+# Secrets: password_env references the process environment or root .env.
 ```
 
 2. Create the database:
@@ -1290,3 +1239,5 @@ Solutions:
 ### 9: What to do when a newly added LLM is unavailable?
 
 Check that the capability has an entry under `models:` in `etc/config/models.yaml` with `model` and `url` set, and that its `provider` profile is registered. Process environment values override `.env`. Restart the service after changing settings.
+
+数据库连接规范已更新 / Connection configuration now uses [etc/conf/db profiles](../database-configuration.md). `persistence.conf` retains the selector and audit policies only; connection settings live only in the etc/conf/db profiles.
