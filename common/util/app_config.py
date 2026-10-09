@@ -41,7 +41,7 @@ def get_conf() -> Dict[str, Any]:
     Load all server configurations.
     server.conf holds feature switches and deployment/access settings;
     server.properties holds operating parameters and business policies.
-    Preserve legacy file precedence; diagnose duplicate keys without logging values.
+    Preserve the previous file precedence; diagnose duplicate keys without logging values.
     REGISTRY_* environment overrides are applied last. The public template
     declares key names for overrides even when an older deployment file omits
     them; its example values are never loaded as runtime defaults.
@@ -120,7 +120,7 @@ def canonical_env_name(key: str) -> str:
 def _declared_keys(template_path: str) -> Iterable[str]:
     """Read override key names, not defaults, from a shipped public template.
 
-    Minimal/custom installations without a template retain legacy behaviour.
+    Minimal/custom installations without a template retain the previous behaviour.
     Never rewrite the operator's configuration to add missing declarations.
     """
     declared = {}
@@ -145,7 +145,7 @@ def apply_env_overrides(conf: Dict[str, Any], known_keys: Iterable[str] = (), en
     env_prefix = "REGISTRY_"
     canonical = {}
     # Dotted keys are registered first: when one name is the canonical spelling
-    # of both 'foo.bar' and a legacy 'foo_bar' key, the dotted key wins.
+    # of both 'foo.bar' and a pre-existing 'foo_bar' key, the dotted key wins.
     keys = dict.fromkeys((*conf, *known_keys))
     for key in keys:
         if '.' in key:
