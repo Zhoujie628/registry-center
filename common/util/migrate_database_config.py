@@ -15,6 +15,7 @@ from pathlib import Path
 
 from dotenv import dotenv_values
 
+from common.util.connection_profiles import PROFILES
 from common.util.database_config import config_directory, DatabaseConfigError
 
 
@@ -102,7 +103,12 @@ def migrate(root, apply=False):
             if secret not in data:
                 continue
             value = str(data.pop(secret))
-            variable = "DB_MIGRATED_" + name.upper() + "_" + secret.upper()
+            # Reference the alias the loader already declares for this profile, so the
+            # name is the documented one rather than a migration-only invention. The
+            # profile file stores the name, so an installation migrated earlier keeps
+            # working with whatever name it was given.
+            declared = PROFILES[name].secrets.get(secret) if name in PROFILES else None
+            variable = declared[0] if declared else name.upper() + "_" + secret.upper()
             if variable in existing_env and existing_env[variable] != value:
                 raise DatabaseConfigError("Migration secret reference conflicts with existing .env; no files changed")
             if variable in os.environ and os.environ[variable] != value:

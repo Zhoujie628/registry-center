@@ -66,7 +66,8 @@ First command lists planned profile names only, no writes or secrets. Second cre
 missing JSONs and appends missing secret references to .env; never overwrites existing
 profiles/variables or removes legacy files. Keep a backup and restrict .env permissions
 (0600 POSIX, private Windows ACLs). Existing ${VAR} password references are retained.
-Literal/encrypted old passwords move to local DB_MIGRATED_* variables. Check results,
+Literal/encrypted old passwords move to local variables named by the profile's own
+declared aliases (REGISTRY_POSTGRESQL_PASSWORD, NEO4J_PASSWORD, MILVUS_TOKEN, ...). Check results,
 restart and verify access before manually removing legacy settings.
 Selected legacy connections without a new profile fail with a migration hint;
 there is no runtime fallback.

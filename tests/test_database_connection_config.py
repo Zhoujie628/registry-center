@@ -125,7 +125,7 @@ def test_migration_conflict_is_non_destructive(tmp_path, monkeypatch):
     legacy = tmp_path / "etc/conf/db_config.json"
     legacy.parent.mkdir(parents=True)
     legacy.write_text('{"password":"legacy"}')
-    (tmp_path / ".env").write_text("DB_MIGRATED_POSTGRESQL_PASSWORD=other\n")
+    (tmp_path / ".env").write_text("REGISTRY_POSTGRESQL_PASSWORD=other\n")
     with pytest.raises(DatabaseConfigError, match="conflicts"):
         migrate(tmp_path, apply=True)
     assert not (tmp_path / "etc/conf/db").exists()
