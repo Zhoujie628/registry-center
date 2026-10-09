@@ -65,7 +65,7 @@ def read_profile_file(profile_name, root, env=None):
     return data
 
 
-def load_profile(name, profile, root, *, previous_locations=()):
+def load_profile(name, profile, root):
     """Resolve process env > .env > selected JSON > provider defaults.
 
     Aliases are evaluated separately in each layer so a process generic DB_HOST
@@ -77,10 +77,6 @@ def load_profile(name, profile, root, *, previous_locations=()):
     env = {**dotenv, **os.environ}
     raw = read_profile_file(name, root, env)
     path = config_directory(root, env) / (name + ".json")
-    if not path.exists() and any((root / old).is_file() for old in previous_locations):
-        raise DatabaseConfigError(
-            f"Previous connection configuration found; migrate to db/{name}.json "
-            "with python -m common.util.migrate_database_config")
     allowed = set(profile.defaults) | set(profile.env) | {
         secret + "_env" for secret in profile.secrets}
     if set(raw) - allowed or any(secret in raw for secret in profile.secrets):

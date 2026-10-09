@@ -238,22 +238,8 @@ def get_persistence_conf() -> dict:
         active.append('audit_mysql')
     if str(get_conf().get('knowledge_graph.enabled', 'false')).lower() == 'true':
         active.append('neo4j')
-    prefixes = {prefix + '.': name for name, prefix in PREFIXES.items() if name != 'audit_mysql'}
-    audit_fields = {'host', 'port', 'name', 'username', 'password', 'connect_timeout'}
-    previous = set()
-    for key in tuple(conf):
-        name = next((name for prefix, name in prefixes.items() if key.startswith(prefix)), None)
-        if key.startswith('audit.mysql.') and key[len('audit.mysql.'):] in audit_fields:
-            name = 'audit_mysql'
-        if name:
-            previous.add(name)
-            del conf[key]
     for name in active:
         try:
-            if name in previous and not (config_directory(root_path, env) / (name + '.json')).is_file():
-                raise DatabaseConfigError(
-                    f"Previous connection settings in persistence.conf; migrate to db/{name}.json "
-                    "with python -m common.util.migrate_database_config")
             conf.update(provider_config(name, root_path))
         except DatabaseConfigError:
             if name != 'audit_mysql':

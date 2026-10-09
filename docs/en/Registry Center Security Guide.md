@@ -482,4 +482,4 @@ Existing `server.conf` is never rewritten; update old signing settings manually 
 | Command Execution (7 items) | execute code, execute command<br>run command, execute shell<br>remote execution, code execution, command execution |
 
 
-数据库连接规范已更新 / Connection configuration now uses [etc/conf/db profiles](../database-configuration.md). `persistence.conf` retains the selector and audit policies only; legacy connection sections must be explicitly migrated.
+数据库连接规范已更新 / Connection configuration now uses [etc/conf/db profiles](../database-configuration.md). `persistence.conf` retains the selector and audit policies only; connection settings live only in the etc/conf/db profiles.

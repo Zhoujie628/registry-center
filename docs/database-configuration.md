@@ -55,26 +55,14 @@ Registry REGISTRY_<legacy-provider-key> aliases remain supported and win within 
 layer, e.g. REGISTRY_MYSQL_NAME and REGISTRY_MYSQL_USERNAME. These are environment
 aliases, not accepted connection keys in persistence.conf.
 
-## Migration / 显式迁移
+## Profiles / 配置档案
 
-```powershell
-python -m common.util.migrate_database_config
-python -m common.util.migrate_database_config --apply
-```
-
-First command lists planned profile names only, no writes or secrets. Second creates
-missing JSONs and appends missing secret references to .env; never overwrites existing
-profiles/variables or removes legacy files. Keep a backup and restrict .env permissions
-(0600 POSIX, private Windows ACLs). Existing ${VAR} password references are retained.
-Literal/encrypted old passwords move to local variables named by the profile's own
-declared aliases (REGISTRY_POSTGRESQL_PASSWORD, NEO4J_PASSWORD, MILVUS_TOKEN, ...). Check results,
-restart and verify access before manually removing legacy settings.
-Selected legacy connections without a new profile fail with a migration hint;
-there is no runtime fallback.
-
-Legacy inputs: orchestration etc/conf/db_config.json and mysql_config.json;
-registry persistence.conf connection sections and common/config/vectordb_config.json.
-Old enc:v1 secrets are decrypted only by the registry migration tool.
+Copy the template of every backend you select from `etc/conf/db/<brand>.json.template`
+to `etc/conf/db/<brand>.json`. A selected backend with no profile file runs on the
+built-in defaults, which point at a local server, so create the file for anything
+other than a local default. Keep `.env` readable only by the service account (0600
+POSIX, private Windows ACLs) and reference secrets by name with `password_env`; a
+literal password or token in a profile is rejected at load.
 
 ## Containers / 容器
 

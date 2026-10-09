@@ -69,13 +69,6 @@ def test_invalid_audit_config_degrades_to_local_only(runtime):
     assert "audit.mysql.password" not in conf
 
 
-def test_legacy_selected_config_requires_migration(runtime, monkeypatch):
-    (runtime / "etc/conf/persistence.conf").write_text("persistence.mode=mysql\nmysql.host=old\n")
-    monkeypatch.setenv("MYSQL_PASSWORD", "fixture")
-    with pytest.raises(DatabaseConfigError, match="migrate"):
-        app_config.get_persistence_conf()
-
-
 def test_file_mode_does_not_parse_inactive_connections(runtime):
     put(runtime, "mysql", {"password": "invalid"})
     assert app_config.get_persistence_conf() == {"persistence.mode": "file"}
