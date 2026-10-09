@@ -125,3 +125,78 @@ def test_inactive_connection_env_does_not_leak_into_policy_dict(runtime, monkeyp
     monkeypatch.setenv("REGISTRY_NEO4J_PASSWORD", "inactive")
     conf = app_config.get_persistence_conf()
     assert all("password" not in key for key in conf)
+
+
+@pytest.mark.parametrize("mode", ["file", "sqlite", "postgresql", "mysql", "gauss"])
+@pytest.mark.parametrize("spelling", [str.lower, str.upper, str.title, lambda value: "  " + value.upper() + "  "])
+@pytest.mark.parametrize("source", ["file", "dotenv", "process"])
+def test_mode_normalized_before_profile_selection(runtime, monkeypatch, mode, spelling, source):
+    value = spelling(mode)
+    name = connection_profiles.PRIMARY_PROFILES.get(mode)
+    if name:
+        config = {"path": "selected.db"} if mode == "sqlite" else {
+            "database": "selected_db", "user": "selected_user", "password_env": "SELECTED_SECRET"}
+        put(runtime, name, config)
+        monkeypatch.setenv("SELECTED_SECRET", "synthetic")
+    if source == "file":
+        (runtime / "etc/conf/persistence.conf").write_text("persistence.mode=" + value + "\n")
+    elif source == "dotenv":
+        (runtime / ".env").write_text('PERSISTENCE_MODE="' + value + '"\n')
+    else:
+        monkeypatch.setenv("REGISTRY_PERSISTENCE_MODE", value)
+    conf = app_config.get_persistence_conf()
+    assert conf["persistence.mode"] == mode
+    if mode == "sqlite":
+        assert conf["sqlite.path"] == str(runtime / "selected.db")
+    elif name:
+        prefix = connection_profiles.PREFIXES[name]
+        assert conf[prefix + (".database" if mode == "gauss" else ".name")] == "selected_db"
+        assert conf[prefix + ".username"] == "selected_user"
+        assert conf[prefix + ".password"] == "synthetic"
+
+
+@pytest.mark.parametrize("mode", ["", "unknown", "gaussdb", "mysql_typo"])
+def test_invalid_mode_rejected_before_profile_loading(runtime, monkeypatch, mode):
+    monkeypatch.setenv("PERSISTENCE_MODE", mode)
+    def fail(*args, **kwargs):
+        pytest.fail("Invalid mode must not load any connection profile")
+    monkeypatch.setattr(connection_profiles, "provider_config", fail)
+    with pytest.raises(ValueError, match="Unknown persistence.mode"):
+        app_config.get_persistence_conf()
+
+
+@pytest.mark.parametrize("source", ["json", "dotenv", "process"])
+def test_sqlite_memory_profile_reaches_real_in_memory_database(runtime, monkeypatch, source):
+    from agent_registry.persistence.sqlite_storage import SQLiteStorage
+    (runtime / "etc/conf/persistence.conf").write_text("persistence.mode=sqlite\n")
+    if source == "json":
+        put(runtime, "sqlite", {"path": ":memory:"})
+    elif source == "dotenv":
+        (runtime / ".env").write_text("SQLITE_PATH=:memory:\n")
+    else:
+        monkeypatch.setenv("REGISTRY_SQLITE_PATH", ":memory:")
+    conf = app_config.get_persistence_conf()
+    assert conf["sqlite.path"] == ":memory:"
+    storage = SQLiteStorage.init(conf)
+    try:
+        assert storage._conn.execute("PRAGMA database_list").fetchone()[2] == ""
+        storage._conn.execute("CREATE TABLE review_probe (value INTEGER)")
+        storage._conn.execute("INSERT INTO review_probe VALUES (42)")
+        storage._conn.commit()
+        assert storage._conn.execute("SELECT value FROM review_probe").fetchone() == (42,)
+        assert not (runtime / "data/agents.db").exists()
+    finally:
+        storage.close()
+
+
+def test_sqlite_absolute_path_preserved(runtime):
+    from agent_registry.persistence.sqlite_storage import SQLiteStorage
+    target = runtime / "external" / "selected.db"
+    put(runtime, "sqlite", {"path": str(target)})
+    conf = connection_profiles.provider_config("sqlite", runtime)
+    assert conf["sqlite.path"] == str(target)
+    storage = SQLiteStorage.init(conf)
+    try:
+        assert target.exists()
+    finally:
+        storage.close()

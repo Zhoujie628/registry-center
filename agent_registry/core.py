@@ -43,6 +43,10 @@ from agent_registry.broadcast import get_event_bus
 from agent_registry.broadcast.events import EventType
 from common.llm import get_llm_instance, get_embed_instance
 from common.util.app_config import get_root_path
+from common.util.persistence_mode import (
+    SQL_PERSISTENCE_MODES, FILE_PERSISTENCE_MODE, KNOWN_PERSISTENCE_MODES,
+    validate_persistence_mode,
+)
 from common.vector_db.vector_db_client.config.vector_db_client_registry import get_or_create_vectordb_tool_instance
 from common.vector_db.vector_db_client.config.vector_db_config import VectorDBType, get_vectordb_config_by_type
 
@@ -64,27 +68,6 @@ def make_agent_id(name: str, organization: str) -> str:
 DISCOVERABLE_STATUS = status_policy.DISCOVERABLE_STATUS
 PENDING_STATUS = status_policy.PENDING_STATUS
 is_discoverable_status = status_policy.is_discoverable_status
-
-
-# Storage backends that share the SQL implementation, plus the JSON-file default.
-SQL_PERSISTENCE_MODES = ('postgresql', 'sqlite', 'gauss', 'mysql')
-FILE_PERSISTENCE_MODE = 'file'
-KNOWN_PERSISTENCE_MODES = (FILE_PERSISTENCE_MODE,) + SQL_PERSISTENCE_MODES
-
-
-def validate_persistence_mode(mode: str) -> str:
-    """Return the normalized persistence mode, or raise for an unknown one.
-
-    An unknown `persistence.mode` used to fall through to the file backend, so a
-    typo silently served the operator a different store than the one configured.
-    """
-    normalized = str(mode or '').strip().lower()
-    if normalized not in KNOWN_PERSISTENCE_MODES:
-        raise ValueError(
-            f"Unknown persistence.mode '{mode}'. "
-            f"Supported: {', '.join(KNOWN_PERSISTENCE_MODES)}"
-        )
-    return normalized
 
 
 class RegistryCore:

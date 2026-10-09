@@ -151,7 +151,7 @@ def verify_storage_ready() -> None:
     so the later FastAPI startup event becomes a cheap no-op.
     """
     from agent_registry.config import PERSISTENCE_CONF, PERSISTENCE_MODE, USE_VECTORDB
-    from agent_registry.core import validate_persistence_mode
+    from common.util.persistence_mode import validate_persistence_mode
     from agent_registry.registry_instance import get_registry
 
     warn_vector_only_mode()
