@@ -48,7 +48,7 @@ class MilvusDBClient(VectorDBClient):
         super().__init__(config)
         client_uri = config["uri"]
         try:
-            self.client = MilvusClient(uri=client_uri)
+            self.client = MilvusClient(uri=client_uri, token=config.get("token", ""))
         except Exception as e:
             logger.error(f"Milvus initiation failed: {e}")
 

@@ -82,7 +82,9 @@ def configure(root, main_port, integration_port, iam_port, enabled, iam_secret):
         source = name + '.example' if name == 'server.conf' else name
         (conf_dir / name).write_bytes((REPO / 'etc/conf' / source).read_bytes())
     override_config(root, values)
-    (conf_dir / 'persistence.conf').write_text(f'persistence.mode=sqlite\nsqlite.path={root / "registry.db"}\n', encoding='utf-8')
+    (conf_dir / 'persistence.conf').write_text('persistence.mode=sqlite\n', encoding='utf-8')
+    (conf_dir / 'db').mkdir()
+    (conf_dir / 'db/sqlite.json').write_text(json.dumps({'path': str(root / "registry.db")}), encoding='utf-8')
     return password
 
 

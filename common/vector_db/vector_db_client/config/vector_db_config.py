@@ -18,7 +18,7 @@
 from enum import Enum
 from typing import Dict
 
-from common.llm.config.config_reader import read_config_as_json
+from common.util.connection_profiles import load_connection_config
 
 
 class VectorDBType(Enum):
@@ -28,7 +28,7 @@ def convert_vectordb_type(vectordb_type:str)->VectorDBType:
     for member in VectorDBType:
         if member.value == vectordb_type:
             return member
-    return VectorDBType.Milvus
+    raise ValueError("Unsupported vector database type")
 
 class VectorDBConfig:
     vectordb_type:VectorDBType
@@ -41,15 +41,12 @@ class VectorDBConfig:
         self.description = config['description']
         self.uri = config['uri']
         self.version = config['version']
+        self.token = config.get('token', '')
 
 def get_vectordb_config() -> Dict[str, VectorDBConfig]:
-    config: dict[str,dict] = read_config_as_json("../../config/vectordb_config.json")
-    vectordb_config_item = {}
-    for key, value_list in config.items():
-        vectordb_config_item[key] = VectorDBConfig(key, value_list)
-    return vectordb_config_item
-
-vectordb_config = get_vectordb_config()
+    config = load_connection_config("milvus")
+    return {"milvus": VectorDBConfig("milvus", config)}
 
 def get_vectordb_config_by_type(vectordb_type: VectorDBType) -> VectorDBConfig:
-    return vectordb_config[vectordb_type.value] if vectordb_type.value in vectordb_config else None
+    # No import-time file read: a disabled vector index needs no connection.
+    return get_vectordb_config().get(vectordb_type.value)
