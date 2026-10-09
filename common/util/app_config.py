@@ -129,7 +129,7 @@ def _declared_keys(template_path: str) -> Iterable[str]:
     return declared.keys()
 
 
-def apply_env_overrides(conf: Dict[str, Any], known_keys: Iterable[str] = ()) -> None:
+def apply_env_overrides(conf: Dict[str, Any], known_keys: Iterable[str] = (), env=None) -> None:
     """
     Override config values with REGISTRY_* environment variables.
 
@@ -152,7 +152,7 @@ def apply_env_overrides(conf: Dict[str, Any], known_keys: Iterable[str] = ()) ->
             canonical.setdefault(canonical_env_name(key), key)
     for key in keys:
         canonical.setdefault(canonical_env_name(key), key)
-    for env_key, env_value in os.environ.items():
+    for env_key, env_value in (os.environ if env is None else env).items():
         if not env_key.startswith(env_prefix):
             continue
         target = canonical.get(env_key)
@@ -171,18 +171,19 @@ def apply_env_overrides(conf: Dict[str, Any], known_keys: Iterable[str] = ()) ->
         conf[raw_key] = env_value
 
 
-def _resolve_env_vars(conf: dict) -> dict:
+def _resolve_env_vars(conf: dict, env=None) -> dict:
     """
     Resolve environment variables in config values.
     Format: ${ENV_VAR:default_value}
     """
     resolved = {}
+    env = os.environ if env is None else env
     for key, value in conf.items():
         if isinstance(value, str):
             pattern = r'\$\{([^}:]+)(?:([^}]*))?\}'
             matches = re.findall(pattern, value)
             for env_var, default in matches:
-                env_value = os.environ.get(env_var, default.lstrip(':') if default else '')
+                env_value = env.get(env_var, default.lstrip(':') if default else '') or ''
                 value = value.replace(f'${{{env_var}{default}}}', env_value)
         resolved[key] = value
     return resolved
@@ -195,24 +196,68 @@ def resolve_env_vars(conf: dict) -> dict:
 
 def get_persistence_conf() -> dict:
     """
-    Read persistence configuration file with environment variable substitution.
-    Decrypt database password if present.
+    Read selectors/policies and resolve only active connection profiles.
     """
     root_path = get_root_path()
+    from common.util.database_config import environment, config_directory, DatabaseConfigError
+    env = environment(root_path)
     persistence_conf_path = os.path.join(root_path, "etc", "conf", "persistence.conf")
     conf = load_conf_as_dict(persistence_conf_path)
-    conf = _resolve_env_vars(conf)
-    apply_env_overrides(conf, _declared_keys(persistence_conf_path + '.example'))
-    if 'postgresql.password' in conf and conf['postgresql.password']:
-        from common.util.cipher_util import decrypt
-        decrypted = decrypt(conf['postgresql.password'])
-        conf['postgresql.password'] = decrypted.decode('utf-8') if isinstance(decrypted, bytes) else decrypted
-    if 'gauss.password' in conf and conf['gauss.password']:
-        from common.util.cipher_util import decrypt
-        decrypted = decrypt(conf['gauss.password'])
-        conf['gauss.password'] = decrypted.decode('utf-8') if isinstance(decrypted, bytes) else decrypted
-    if 'mysql.password' in conf and conf['mysql.password']:
-        from common.util.cipher_util import decrypt
-        decrypted = decrypt(conf['mysql.password'])
-        conf['mysql.password'] = decrypted.decode('utf-8') if isinstance(decrypted, bytes) else decrypted
+    conf = _resolve_env_vars(conf, env)
+    from common.util.connection_profiles import PROFILES, PREFIXES, PRIMARY_PROFILES, provider_config
+    connection_vars = {
+        alias for profile in PROFILES.values()
+        for aliases in (*profile.env.values(), *profile.secrets.values())
+        for alias in aliases
+    }
+    # Connection variables never leak into the policy dictionary as raw names.
+    policy_env = {key: value for key, value in env.items() if key not in connection_vars}
+    apply_env_overrides(conf, _declared_keys(persistence_conf_path + '.example'), policy_env)
+    # Connection material is exclusively resolved from the selected profile.
+    # Keep backend dictionaries as the public injection API, not file readers.
+    def control_value(names, default):
+        value = default
+        for source in (env, os.environ):
+            for name in names:
+                if source.get(name) is not None:
+                    value = source[name]
+                    break
+        return value
+    mode = control_value(('REGISTRY_PERSISTENCE_MODE', 'PERSISTENCE_MODE'),
+                         conf.get('persistence.mode', 'file'))
+    conf['persistence.mode'] = mode
+    for field in ('enabled', 'batch_size', 'flush_interval'):
+        key = 'audit.mysql.' + field
+        value = control_value((canonical_env_name(key), 'AUDIT_MYSQL_' + field.upper()), conf.get(key))
+        if value is not None:
+            conf[key] = value
+    active = []
+    if mode in PRIMARY_PROFILES:
+        active.append(PRIMARY_PROFILES[mode])
+    if str(conf.get('audit.mysql.enabled', 'false')).lower() == 'true':
+        active.append('audit_mysql')
+    if str(get_conf().get('knowledge_graph.enabled', 'false')).lower() == 'true':
+        active.append('neo4j')
+    prefixes = {prefix + '.': name for name, prefix in PREFIXES.items() if name != 'audit_mysql'}
+    audit_fields = {'host', 'port', 'name', 'username', 'password', 'connect_timeout'}
+    legacy = set()
+    for key in tuple(conf):
+        name = next((name for prefix, name in prefixes.items() if key.startswith(prefix)), None)
+        if key.startswith('audit.mysql.') and key[len('audit.mysql.'):] in audit_fields:
+            name = 'audit_mysql'
+        if name:
+            legacy.add(name)
+            del conf[key]
+    for name in active:
+        try:
+            if name in legacy and not (config_directory(root_path, env) / (name + '.json')).is_file():
+                raise DatabaseConfigError(
+                    f"Legacy connection settings in persistence.conf; migrate to db/{name}.json "
+                    "with python -m common.util.migrate_database_config")
+            conf.update(provider_config(name, root_path))
+        except DatabaseConfigError:
+            if name != 'audit_mysql':
+                raise
+            logger.warning("Audit MySQL connection configuration is invalid; continuing with local audit only")
+            conf['audit.mysql.enabled'] = 'false'
     return conf
