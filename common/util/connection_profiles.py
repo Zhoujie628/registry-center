@@ -38,8 +38,8 @@ def _sql_profile(name, port, *, primary=True):
         fields.update(pool_min="POOL_MIN", pool_max="POOL_MAX")
     env = {}
     for field, suffix in fields.items():
-        legacy = "DATABASE" if name == "gaussdb" and field == "database" else FIELDS.get(field, field).upper().replace(".", "_")
-        aliases = [f"REGISTRY_{prefix}_{legacy}", f"{vendor}_{suffix}"]
+        alias = "DATABASE" if name == "gaussdb" and field == "database" else FIELDS.get(field, field).upper().replace(".", "_")
+        aliases = [f"REGISTRY_{prefix}_{alias}", f"{vendor}_{suffix}"]
         if name == "audit_mysql" and field == "user":
             aliases.append("AUDIT_MYSQL_USERNAME")
         if name == "postgresql" and field == "connect_timeout":
