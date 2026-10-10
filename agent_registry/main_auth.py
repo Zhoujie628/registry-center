@@ -4,9 +4,11 @@
 
 """Optional main-port Token policy reusing the integration authentication ports.
 
-Credentials/policies are shared; provider instances and their async transports
-are NOT shared across listener event loops. Existing certificate/proxy modes
-retain their behavior. Owner-scoped writes continue through the existing guard.
+Credentials/policies are shared; built-in providers and their async transports
+are created separately for each listener. Business-registered custom providers
+remain externally owned and shared; they must support concurrent listener use.
+Existing certificate/proxy modes retain their behavior. Owner-scoped writes
+continue through the existing guard.
 """
 
 from fastapi import HTTPException
