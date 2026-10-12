@@ -46,6 +46,34 @@ SPDX-License-Identifier: Apache-2.0
   the batch succeeded, `registeredAgents` / `updatedAgents` records that partial
   success. The batch is not an all-or-nothing transaction.
 
+### Transport, Caller Identity and Permissions
+
+HTTP/HTTPS, incoming client certificates, caller Token authentication, owner authorization and
+AgentCard JWS signatures are independent. Disabling peer-certificate verification does not disable authentication.
+
+| Listener | Caller identity | Operation boundary |
+| --- | --- | --- |
+| Main `/rest/v1/registry-center/*` | `owner.identity.mode=token`: Bearer validated by the configured `integration.auth.*` provider | Ordinary roles discover public cards; `vendor_agent` additionally writes/heartbeats its own cards; `nms_oss` has administrative access. Existing owner guards still apply. |
+| Main, certificate/proxy identity | Existing certificate or trusted proxy identity policy | Certificate identity requires HTTPS with client verification; only trust explicitly configured proxies. |
+| Integration `/integration/*` | Independently configured Token/mTLS provider | Role/operation-specific policy; this is not the main API port. Token acquisition is available only when the integration API/provider supports it. |
+
+Example main-port discovery (`REGISTRY_API_TOKEN` comes from your configured identity provider):
+
+```bash
+curl --cacert /secure/trust.cer \
+  -H "Authorization: Bearer ${REGISTRY_API_TOKEN}" \
+  https://registry.example/rest/v1/registry-center/agent-cards
+```
+
+401 means missing/invalid/expired credentials (or an independently failed card-signature check);
+403 means verified identity without role/owner permission; 503 means required authentication,
+signing or storage capability is unavailable. Provider failure does not become anonymous access.
+This service is not the orchestration center's web-account login server.
+
+The JWKS `/rest/v1/registry-center/keys` route is exempt from application Token authentication.
+That exemption cannot bypass TLS: when `verify_client=true`, every HTTPS connection, including JWKS,
+must present a valid client certificate. See [current transport details](../transport-runtime.md).
+
 ## Register AgentCard
 
 - Typical Scenario
@@ -259,7 +287,7 @@ SPDX-License-Identifier: Apache-2.0
 | Status Code | Description                          |
 |--------|--------------------------------------|
 | 201 | Registration successful.             |
-| 401 | Signature verification failed.       |
+| 401 | Caller authentication or card signature verification failed.       |
 | 413 | Request body too large.              |
 | 422 | Registration failed, AgentCard parameter validation failed. |
 | 409 | Registration failed, registration count exceeds limit or duplicate registration. |
@@ -699,7 +727,7 @@ SPDX-License-Identifier: Apache-2.0
     |--------|--------------------------------------|
     | 200 | Update successful.                   |
     | 400 | Parameter validation failed.         |
-    | 401 | Signature verification failed.       |
+    | 401 | Caller authentication or card signature verification failed.       |
     | 403 | Permission denied.                   |
 | 404 | Query failed, Agent not found.      |
     | 422 | Update failed, AgentCard parameter validation failed. |
@@ -928,7 +956,7 @@ SPDX-License-Identifier: Apache-2.0
 - Interface Constraints
 
   - Rate limiting: 10 requests/second.
-  - Authentication: No client certificate authentication or user authentication required.
+  - Authentication: exempt from application Token authentication; HTTPS with `verify_client=true` still requires a client certificate at the TLS handshake.
 
 - Method
 

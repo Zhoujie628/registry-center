@@ -1,5 +1,10 @@
 # Registry Center upgrade and deployment notes
 
+## Authentication and Signing Migration
+
+New HTTP/HTTPS deployments must configure their caller identity/provider separately from TLS. Missing local provider materials reject startup. Signing enabled with invalid material rejects startup or returns 503, never silently unsigned. Use independent `etc/sign_cert/sign.cer`, `sign_key.pem` and `cert_pwd` through `jwk_*` settings; re-register/update older non-standard signed cards. Review the [transport contract](../transport-runtime.md) and [API permissions](./Registry%20Center%20API%20Reference.md#transport-caller-identity-and-permissions) before upgrading.
+
+
 ## Caller identity and ownership
 
 For direct mTLS deployments, configure:

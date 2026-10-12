@@ -45,6 +45,33 @@ SPDX-License-Identifier: Apache-2.0
   不承担身份重命名，也不会改写已签名正文。不合法条目返回 422；此前条目已成功
   时，`registeredAgents` / `updatedAgents` 保留部分成功记录，整批并非全有或全无事务。
 
+### 传输、调用者身份与权限
+
+HTTP/HTTPS、入站客户端证书、调用者 Token、所有者授权与 AgentCard JWS 签名是独立职责。
+关闭对端证书校验不等于关闭认证。
+
+| 监听器 | 调用者身份 | 操作边界 |
+| --- | --- | --- |
+| 主端口 `/rest/v1/registry-center/*` | `owner.identity.mode=token`：由 `integration.auth.*` provider 校验 Bearer | 普通角色发现公开卡片；`vendor_agent` 还可写入/心跳自己的卡片；`nms_oss` 可管理。原有所有者守卫仍执行。 |
+| 主端口证书/代理模式 | 现有证书或受信代理身份策略 | 证书身份要求 HTTPS 与客户端校验；代理必须显式受信。 |
+| 集成端口 `/integration/*` | 独立配置的 Token/mTLS provider | 按角色和操作授权，不是主端口；Token 获取仅在集成 API/provider 支持时提供。 |
+
+主端口发现示例（`REGISTRY_API_TOKEN` 由已配置的身份系统提供）：
+
+```bash
+curl --cacert /secure/trust.cer \
+  -H "Authorization: Bearer ${REGISTRY_API_TOKEN}" \
+  https://registry.example/rest/v1/registry-center/agent-cards
+```
+
+401 表示缺失/无效/过期凭据，也可能是独立的卡片验签失败；403 表示已认证但角色/所有权不允许；
+503 表示认证、签名或存储等必要能力不可用。provider 故障不会放行匿名请求。
+注册中心不是编排中心的网页登录账号服务。
+
+JWKS `/rest/v1/registry-center/keys` 免应用 Token 认证，但不绕过 TLS：
+`verify_client=true` 时所有 HTTPS 连接（含 JWKS）仍须客户端证书。
+详见[当前传输契约](../transport-runtime.md)。
+
 ## 注册AgentCard
 
 - 典型场景
@@ -269,7 +296,7 @@ SPDX-License-Identifier: Apache-2.0
 | 状态码 | 说明                    |
 |--------|-----------------------|
 | 201 | 注册成功。                 |
-| 401 | 签名验证失败。               |
+| 401 | 调用者认证或卡片签名验证失败。               |
 | 413 | 请求体过大。                |
 | 422 | 注册失败，AgentCard参数校验失败。 |
 | 409 | 注册失败，注册数量超出上限或重复注册。   |
@@ -718,7 +745,7 @@ SPDX-License-Identifier: Apache-2.0
     |--------|-----------------------|
     | 200 | 修改成功。                 |
     | 400 | 参数校验失败。               |
-    | 401 | 签名验证失败。               |
+    | 401 | 调用者认证或卡片签名验证失败。               |
     | 403 | 权限拒绝。                 |
     | 404 | 修改失败，Agent未找到。        |
     | 422 | 修改失败，AgentCard参数校验失败。 |
@@ -1162,7 +1189,7 @@ SPDX-License-Identifier: Apache-2.0
 - 接口约束
 
   - 接口流控：10次/秒。
-  - 接口认证：不需要客户端证书认证，不需要用户认证。
+  - 接口认证：免应用 Token 认证；HTTPS 配置 `verify_client=true` 时，TLS 握手仍须有效客户端证书。
 
 - 调用方法
 

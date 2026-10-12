@@ -19,6 +19,36 @@ SPDX-License-Identifier: Apache-2.0
 
 # Registry Center Security Guide
 
+### Transport, Caller Identity and Permissions
+
+HTTP/HTTPS, incoming client certificates, caller Token authentication, owner authorization and
+AgentCard JWS signatures are independent. Disabling peer-certificate verification does not disable authentication.
+
+| Listener | Caller identity | Operation boundary |
+| --- | --- | --- |
+| Main `/rest/v1/registry-center/*` | `owner.identity.mode=token`: Bearer validated by the configured `integration.auth.*` provider | Ordinary roles discover public cards; `vendor_agent` additionally writes/heartbeats its own cards; `nms_oss` has administrative access. Existing owner guards still apply. |
+| Main, certificate/proxy identity | Existing certificate or trusted proxy identity policy | Certificate identity requires HTTPS with client verification; only trust explicitly configured proxies. |
+| Integration `/integration/*` | Independently configured Token/mTLS provider | Role/operation-specific policy; this is not the main API port. Token acquisition is available only when the integration API/provider supports it. |
+
+Example main-port discovery (`REGISTRY_API_TOKEN` comes from your configured identity provider):
+
+```bash
+curl --cacert /secure/trust.cer \
+  -H "Authorization: Bearer ${REGISTRY_API_TOKEN}" \
+  https://registry.example/rest/v1/registry-center/agent-cards
+```
+
+401 means missing/invalid/expired credentials (or an independently failed card-signature check);
+403 means verified identity without role/owner permission; 503 means required authentication,
+signing or storage capability is unavailable. Provider failure does not become anonymous access.
+This service is not the orchestration center's web-account login server.
+
+The JWKS `/rest/v1/registry-center/keys` route is exempt from application Token authentication.
+That exemption cannot bypass TLS: when `verify_client=true`, every HTTPS connection, including JWKS,
+must present a valid client certificate. See [current transport details](../transport-runtime.md).
+
+
+
 The Registry Center security capabilities are as follows:
 
 - **Secure Communication**: Inter-system interactions use the HTTPS protocol by default, with secure TLS protocol versions and cipher suites.
@@ -322,51 +352,30 @@ Signature validation disabled
 
 ### Providing Registry Center Signature
 
-After successful AgentCard registration or modification, a Registry Center signature can be computed for the AgentCard.<br>
-The Registry Center performs the signing using the Registry Center's signing key according to the mechanism in https://a2a-protocol.org/latest/specification/#84-agent-card-signing.<br>
-The AgentCard signature field queried by the agent client from the Registry Center will include both the original AgentCard signature and the Registry Center signature.<br>
+When `registry.sign.enabled=true` (default), the registry adds a standard JWS signature alongside
+the original card signatures. Required signing material is separate from TLS identity:
 
-Configure whether to enable this feature in the init command, command example:<br>
-Enable registry signing registry.sign.enabled (y/n, default: true): y
-<br>
-
-```bash
-# init command client starts and enters the interface
-[user@host registry-center-main]# python -m agent_registry.init
-# Other configuration items
-
-# Enable Registry Center signing
-Enable registry signing registry.sign.enabled (y/n, default: true): y
-
-Configure signing certificate (RSA only):
-Enter signing certificate path sign_certfile:  /testdir/test_client.cer
-# The password is only required when the sign_keyfile location is changed from the default
-Enter signing private key path sign_keyfile: /testdir/test_client_key.pem
-Enter signing private key password:
-# A prompt appears if the password does not meet complexity requirements. You can continue to use this low-complexity password private key after accepting the risk
-Private key password complexity is low (At least 8 characters), continue using this password? (y/n):  y
+```ini
+registry.sign.enabled=true
+jwk_cert_path=etc/sign_cert/sign.cer
+jwk_private_key_path=etc/sign_cert/sign_key.pem
+jwk_private_key_password=etc/sign_cert/cert_pwd
 ```
 
-Note: the `sign_certfile`, `sign_keyfile` and `sign_keyfile_password` prompts above write keys that no runtime code reads, so they are inert. The signing material actually used is `jwk_cert_path` (the signing certificate, whose public key is also served as the public JWK) together with `jwk_private_key_path` (the PEM private key file) and `jwk_private_key_password` (the path to a file whose content is the passphrase; empty means the key is unencrypted). The init wizard collects these under the `jwk_*` names; configure them in `etc/conf/server.conf` for the signature to be produced.<br>
+`jwk_private_key_password` is a passphrase **file path**, not the passphrase.
+For an unencrypted private key, an empty setting/file is normalized to no password.
+Use a matching PEM certificate/private key with supported signing algorithms; do not require
+TLS `serverAuth` or reuse the HTTPS server key. Protect signing material with service-account permissions.
 
-This signing feature is enabled by default and requires configuring the Registry Center signing certificate when enabled. Certificate requirements:<br>
-- server.cer:
-Required, identity certificate, only PEM encoding format supported<br>
-Certificate format: X.509v3<br>
-Certificate key algorithm, key length: RSA (>= 3072 bits), ECDSA (>= 256 bits)<br>
-Validity period: valid at the current time<br>
-Certificate key usage: digital signature, key encipherment<br>
-Extended key usage: server authentication<br>
+Missing/invalid material rejects startup while signing is enabled. If signing becomes unavailable at
+runtime, affected requests fail with 503; cards are not silently emitted unsigned.
+Disabling `registry.sign.enabled` is an explicit operator choice, not automatic degradation.
 
-- server_key.pem:
-Required, private key file, only PEM encoding format supported<br>
-Private key and public key matching: must match the public key in server.cer<br>
-The private key file must be protected by a private key password. The private key password must meet complexity requirements: at least 8 characters, containing at least two character types (digits, uppercase letters, lowercase letters, special characters `` `~!@#$%^&*()-_=+ | [{}]);:'",<.>/? `` and spaces)<br>
-
-The signature verification public key can be obtained via the GET /rest/v1/registry-center/keys interface. This interface has no request parameters and returns the public key of the signing certificate configured in `jwk_cert_path` in standard JWKS format. For the interface definition, refer to the [Registry Center API Reference](./Registry%20Center%20API%20Reference.md#get-public-key-information)<br>
-
-For debugging scenarios, the [Self-Signed Certificate Generation Tool](#self-signed-certificate-generation-tool) can be used to generate the two certificate files that meet the above requirements. Note that such certificates must not be used in production environments.<br>
-
+For development only: `python -m generate_selfsign_cert etc/sign_cert dataSigning` generates
+`sign.cer`, encrypted `sign_key.pem` and `cert_pwd`. Production material comes from managed PKI.
+The init wizard's historical `sign_certfile/sign_keyfile/sign_keyfile_password` settings are inert;
+configure the actual `jwk_*` paths above. JWKS publishes that certificate's public key at
+`GET /rest/v1/registry-center/keys`; see the TLS limitation in the caller-identity section.
 
 ### AgentCard Manual Review
 

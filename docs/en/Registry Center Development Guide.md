@@ -290,7 +290,7 @@ For detailed interface parameters, please refer to [Registry Center API Referenc
     - The combination of `name` and `provider.organization` serves as the unique identifier and cannot be registered more than once.
     - `description` length limit: 1~1000 characters.
     - `skills`: maximum 100, each skill description up to 4096 characters.
-    - Prompt injection keywords and high-risk skill descriptions are prohibited. See [AgentCard Security Specification](../../design/AgentCard_Security_Specification.md) for details.
+    - Prompt injection keywords and high-risk skill descriptions are prohibited. See [AgentCard Security Specification](./Registry%20Center%20Security%20Guide.md) for details.
 
 2. Generate a signature (optional)
 
@@ -1148,7 +1148,7 @@ AgentCard registration must follow security specifications. The following are pr
 - Prompt injection attacks (keywords for ignoring instructions, jailbreaking, forced execution, etc.)
 - High-risk skill descriptions (keywords for privilege escalation, data theft, network attacks, etc.)
 
-For detailed specifications, please refer to [AgentCard Security Specification](../../design/AgentCard_Security_Specification.md).
+For detailed specifications, please refer to [AgentCard Security Specification](./Registry%20Center%20Security%20Guide.md).
 
 ### Appendix 4: LLM Configuration Guide
 
