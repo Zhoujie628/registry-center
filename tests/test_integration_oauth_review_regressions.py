@@ -287,6 +287,10 @@ def test_unmatched_integration_listener_url_redacts_queries():
 def test_tls_startup_failure_allows_corrected_retry_and_stop_start(monkeypatch, tmp_path):
     pki = tmp_path / 'pki'
     configure(pki, free_port(), free_port(), free_port(), False, 'review-secret')
+    credentials = pki / 'retry-credentials.conf'
+    digest = authn.token_fingerprint('synthetic-retry-token', 'review-key')
+    credentials.write_text('credential.test.identity=test\ncredential.test.role=vendor_agent\n'
+                           f'credential.test.token_hash={digest}\n', encoding='utf-8')
     issuer = FakeIssuer()
     monkeypatch.setattr(acquisition, '_service', None)
     monkeypatch.setattr(acquisition, '_configured', False)
@@ -297,7 +301,7 @@ def test_tls_startup_failure_allows_corrected_retry_and_stop_start(monkeypatch, 
                               get_crl_list=lambda: [], ssl_crl_file='')
     server = ThirdPartyAccessServer({'integration.enabled': 'true', 'integration.port': free_port(),
         'integration.auth.mode': 'static_bearer', 'integration.auth.fingerprint_key': 'review-key',
-        'integration.auth.static.hmac_key': 'review-key', 'integration.credential.file': str(pki / 'none.conf'),
+        'integration.auth.static.hmac_key': 'review-key', 'integration.credential.file': str(credentials),
         'integration.token.enabled': 'true', 'integration.token.provider': 'review_issuer',
         'integration.token.allowed_scopes': 'registry.read'}, conf_obj)
     try:

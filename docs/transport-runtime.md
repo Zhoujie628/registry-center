@@ -11,6 +11,8 @@ HTTP、HTTPS、是否验证客户端证书、业务认证与 AgentCard 签名是
 - registry.sign.enabled=true 时缺/错签名材料拒绝服务，不再静默返回 unsigned。签名使用 SDK 标准 JWS；未加密签名 key 的空口令归一为 None。既有非标准签名卡片需重新注册/更新后获取标准 JWS。
 - JWKS 依据签名准备状态可用，非依据监听协议。registry.public.base_url 指公开入口；通配 bind 不生成 jku。HTTP 消费方使用预置可信公钥，远程 JWKS 仍要求 HTTPS/信任白名单。
 - 主端口 Token 的普通角色仅可发现公开卡片，vendor_agent 可写自己的卡片；管理/订阅等使用已授权 integration 操作或管理身份，原有业务所有者检查保留。
+- 主端口及启用的集成 listener 在接受业务请求前校验所选认证 provider 的本地材料：static_bearer 至少有一个有效且启用的 Token 条目，mtls 至少有一个有效证书身份绑定。缺文件、空文件、全禁用/全无效条目不再启动成“健康但全部 401”；主端口 health 也核验认证准备状态。OAuth2 不要求静态 Token 文件，不在探针期间调用 IAM；自定义 provider 可实现同步 `validate_configuration()`，其资源所有权不变。
+- `REGISTRY_ENABLE_HTTPS=true` + `REGISTRY_VERIFY_CLIENT=false` 仍加密传输，但不要求客户端证书；调用方 `verify=False` 可另行关闭服务端证书校验。两者不关闭 Token/所有权/签名策略：合法 Token 可调用，缺/错 Token 仍拒绝。开启客户端证书校验时，调用方的 verify=False 不能代替客户端证书。
 
 
 ## 镜像与挂载

@@ -28,7 +28,20 @@ class MainTokenPolicy:
         from agent_registry.integration.authn import ThirdPartyAuthnHandler
         if str(config.get('integration.auth.mode', 'static_bearer')) == 'mtls':
             raise ValueError('Token identity requires a token authentication provider')
-        self.handler = ThirdPartyAuthnHandler(config=config)
+        handler = ThirdPartyAuthnHandler(config=config)
+        try:
+            handler.validate_configuration()
+        except BaseException:
+            await handler.aclose()
+            raise
+        self.handler = handler
+
+    def validate_configuration(self):
+        if self.handler is None:
+            raise ValueError('Main authentication provider unavailable')
+        validate = getattr(self.handler, 'validate_configuration', None)
+        if validate is not None:
+            validate()
 
     async def close(self):
         handler, self.handler = self.handler, None
@@ -37,7 +50,9 @@ class MainTokenPolicy:
 
     async def authenticate(self, request):
         from agent_registry.integration.app import authenticate_request
-        if self.handler is None:
+        try:
+            self.validate_configuration()
+        except ValueError:
             raise HTTPException(503, 'Main authentication provider unavailable')
         principal = await authenticate_request(request, self.handler)
         if not isinstance(principal, Principal) or not principal.identity or principal.role is None:

@@ -106,6 +106,9 @@ async def integration_lifespan(app: FastAPI):
     handler = HandlerRegistry._instances.get(InterfaceType.INTEGRATION_AUTHENTICATE.value)
     service = get_token_acquisition() if handler is not None else None
     try:
+        validate = getattr(handler, 'validate_configuration', None)
+        if validate is not None:
+            validate()
         yield
     finally:
         await close_integration_resources(expected_handler=handler, expected_service=service)

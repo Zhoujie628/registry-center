@@ -172,6 +172,7 @@ class ThirdPartyAccessServer:
                 handler = ThirdPartyAuthnHandler(
                     credential_file=str(auth_config.get('integration.credential.file', '')),
                     config=auth_config)
+                handler.validate_configuration()
                 owned_service = configure_token_acquisition(auth_config)
                 owns_resources = True
                 HandlerRegistry._instances[InterfaceType.INTEGRATION_AUTHENTICATE.value] = handler
