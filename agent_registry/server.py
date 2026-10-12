@@ -1881,8 +1881,11 @@ async def health_probe():
     get_registry_signer()
     from agent_registry.identity import TOKEN, identity_mode
     from agent_registry.main_auth import main_token_policy
-    if identity_mode(config) == TOKEN and main_token_policy.handler is None:
-        raise HTTPException(503, 'Authentication provider unavailable')
+    if identity_mode(config) == TOKEN:
+        try:
+            main_token_policy.validate_configuration()
+        except ValueError:
+            raise HTTPException(503, 'Authentication provider unavailable') from None
     return {'status': 'ok'}
 
 # Include knowledge graph router

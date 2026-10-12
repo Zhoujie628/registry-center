@@ -83,17 +83,24 @@ class _FakeConfObj:
         return []
 
 
-def _integration_conf():
+def _integration_conf(tmp_path):
     """Minimal config that lets start() reach the uvicorn.Server stub.
 
     ThirdPartyAuthnHandler (constructed inside start()) requires a
     fingerprint key in static-bearer mode, and StaticBearerProvider requires
-    the HMAC key.
+    the HMAC key and at least one usable credential. Keep readiness real so
+    lifecycle cases reach the intended uvicorn failure rather than config failure.
     """
+    from agent_registry.integration.authn import token_fingerprint
+    credentials = tmp_path / 'lifecycle-credentials.conf'
+    digest = token_fingerprint('synthetic-lifecycle-token', 'test-hmac-key')
+    credentials.write_text('credential.test.identity=test\ncredential.test.role=vendor_agent\n'
+                           f'credential.test.token_hash={digest}\n', encoding='utf-8')
     return {
         'integration.enabled': 'true',
         'integration.auth.fingerprint_key': 'test-fingerprint-key',
         'integration.auth.static.hmac_key': 'test-hmac-key',
+        'integration.credential.file': str(credentials),
     }
 
 
@@ -151,13 +158,13 @@ def preserve_integration_authn_handler():
 class TestListenerLifecycle:
 
     def test_double_start_logs_warning_and_keeps_single_thread(
-            self, monkeypatch, stub_uvicorn_server,
+            self, tmp_path, monkeypatch, stub_uvicorn_server,
             preserve_integration_authn_handler, loguru_caplog):
         monkeypatch.setattr(listener_module, '_STARTUP_TIMEOUT_SECONDS', 0.3)
         _StubServer.block = True  # thread stays alive past the startup loop
         _StubServer.ready = True
 
-        server = ThirdPartyAccessServer(_integration_conf(), conf_obj=_FakeConfObj())
+        server = ThirdPartyAccessServer(_integration_conf(tmp_path), conf_obj=_FakeConfObj())
         server.start()
         first_thread = server._thread
         assert first_thread is not None
@@ -170,8 +177,8 @@ class TestListenerLifecycle:
         assert "already started" in loguru_caplog.text
         server.stop()
 
-    def test_stop_before_start_is_noop(self, stub_uvicorn_server, loguru_caplog):
-        server = ThirdPartyAccessServer(_integration_conf(), conf_obj=_FakeConfObj())
+    def test_stop_before_start_is_noop(self, tmp_path, stub_uvicorn_server, loguru_caplog):
+        server = ThirdPartyAccessServer(_integration_conf(tmp_path), conf_obj=_FakeConfObj())
         server.stop()  # must not raise
         assert server._thread is None
         assert server._server is None
@@ -179,14 +186,14 @@ class TestListenerLifecycle:
         assert "stopped" not in loguru_caplog.text, "no-op stop() must stay silent"
 
     def test_thread_exit_during_startup_raises_and_cleans(
-            self, monkeypatch, stub_uvicorn_server,
+            self, tmp_path, monkeypatch, stub_uvicorn_server,
             preserve_integration_authn_handler, loguru_caplog):
         # Short timeout is a safety net: the loop is expected to leave via the
         # is_alive() branch on its first or second iteration.
         monkeypatch.setattr(listener_module, '_STARTUP_TIMEOUT_SECONDS', 2)
         _StubServer.block = False  # run() returns immediately -> thread dies
 
-        server = ThirdPartyAccessServer(_integration_conf(), conf_obj=_FakeConfObj())
+        server = ThirdPartyAccessServer(_integration_conf(tmp_path), conf_obj=_FakeConfObj())
         with pytest.raises(RuntimeError, match='startup failed'):
             server.start()
 
@@ -196,12 +203,12 @@ class TestListenerLifecycle:
         server.stop()
 
     def test_startup_timeout_raises_and_cleans_thread(
-            self, monkeypatch, stub_uvicorn_server,
+            self, tmp_path, monkeypatch, stub_uvicorn_server,
             preserve_integration_authn_handler, loguru_caplog):
         monkeypatch.setattr(listener_module, '_STARTUP_TIMEOUT_SECONDS', 0.3)
         _StubServer.block = True  # thread alive, started never becomes True
 
-        server = ThirdPartyAccessServer(_integration_conf(), conf_obj=_FakeConfObj())
+        server = ThirdPartyAccessServer(_integration_conf(tmp_path), conf_obj=_FakeConfObj())
         t0 = time.monotonic()
         with pytest.raises(RuntimeError, match='startup timed out'):
             server.start()

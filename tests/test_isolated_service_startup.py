@@ -27,7 +27,8 @@ TOKEN = "test-only-process-vendor-token"
 
 
 @pytest.mark.parametrize("protocol", ["http", "https"])
-def test_fresh_service_authenticated_crud_and_keys(protocol, tmp_path):
+@pytest.mark.parametrize("credential_state", ["valid", "missing", "empty", "disabled", "invalid"])
+def test_fresh_service_authenticated_crud_and_keys(protocol, credential_state, tmp_path):
     workspace = tmp_path / "service"
     for package in ("agent_registry", "common"):
         for path in (ROOT / package).rglob("*.py"):
@@ -43,9 +44,16 @@ def test_fresh_service_authenticated_crud_and_keys(protocol, tmp_path):
         shutil.copyfile(ROOT / "etc/conf" / name, conf_dir / name)
     secret = "test-only-process-hmac"
     digest = hmac.new(secret.encode(), TOKEN.encode(), hashlib.sha256).hexdigest()
-    (conf_dir / "integration_credentials.conf").write_text(
-        f"credential.vendor.identity=test-vendor\ncredential.vendor.role=vendor_agent\n"
-        f"credential.vendor.token_hash={digest}\n")
+    content = (f"credential.vendor.identity=test-vendor\ncredential.vendor.role=vendor_agent\n"
+               f"credential.vendor.token_hash={digest}\n")
+    if credential_state == "disabled":
+        content += "credential.vendor.enabled=false\n"
+    elif credential_state == "empty":
+        content = ""
+    elif credential_state == "invalid":
+        content = content.replace(digest, "not-a-valid-hash")
+    if credential_state != "missing":
+        (conf_dir / "integration_credentials.conf").write_text(content, encoding="utf-8")
     cert, key, pwd, private = _materials(tmp_path)
     key.write_bytes(private.private_bytes(serialization.Encoding.PEM, serialization.PrivateFormat.PKCS8,
                                          serialization.BestAvailableEncryption(b"Process#2026")))
@@ -83,6 +91,10 @@ uvicorn.run('agent_registry.server:app', host='127.0.0.1', port=int(sys.argv[1])
         process = subprocess.Popen([sys.executable, "-c", code, str(port)], cwd=workspace,
                                    env=env, stdout=log, stderr=log)
         try:
+            if credential_state != "valid":
+                assert process.wait(timeout=30) != 0, "Unusable static credentials must reject startup"
+                assert "enabled valid token credential" in (tmp_path / "service.log").read_text(encoding="utf-8")
+                return
             verify = ssl.create_default_context(cafile=str(cert)) if protocol == "https" else True
             with httpx.Client(base_url=f"{protocol}://127.0.0.1:{port}", verify=verify, trust_env=False) as client:
                 deadline = time.monotonic() + 30

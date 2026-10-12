@@ -105,6 +105,13 @@ class AuthenticationProvider(ABC):
     provider_id = ''
     credential_kind = ''
 
+    def validate_configuration(self) -> None:
+        """Check local readiness without calling IAM or requiring static files.
+
+        Business providers may override this hook; resource ownership stays
+        unchanged. A successful object construction alone is not readiness.
+        """
+
     @abstractmethod
     async def authenticate(self, credential: Credential,
                            context: AuthenticationContext) -> Principal:
@@ -181,6 +188,10 @@ class StaticBearerProvider(AuthenticationProvider):
         if not hmac_key:
             raise ValueError("integration.auth.static.hmac_key is required")
         self._entries, self._key = entries, hmac_key
+
+    def validate_configuration(self) -> None:
+        if not self._entries:
+            raise ValueError("Static Bearer authentication requires an enabled valid token credential")
 
     async def authenticate(self, credential: Credential, context: AuthenticationContext) -> Principal:
         digest = token_fingerprint(credential.value, self._key)
@@ -340,6 +351,10 @@ class MtlsProvider(AuthenticationProvider):
     def __init__(self, entries: Mapping[str, CredentialEntry]):
         self._entries = entries
 
+    def validate_configuration(self) -> None:
+        if not self._entries:
+            raise ValueError("mTLS authentication requires an enabled certificate identity binding")
+
     async def authenticate(self, credential: Credential, context: AuthenticationContext) -> Principal:
         cn = ''
         for rdn in (credential.peer_certificate or {}).get('subject') or ():
@@ -411,6 +426,13 @@ class ThirdPartyAuthnHandler(BaseHandler):
             self.extractors = [_CUSTOM_EXTRACTORS[self.mode], TlsPeerCertificateExtractor()]
         elif self.mode != 'mtls':
             raise ValueError(f"Unsupported integration authentication mode: {self.mode}")
+
+    def validate_configuration(self) -> None:
+        # Validate only the selected provider. OAuth2/custom providers do not
+        # acquire an accidental dependency on static Bearer credential files.
+        validate = getattr(self.registry.get(self.mode), 'validate_configuration', None)
+        if validate is not None:
+            validate()
 
     def credential_hint(self, request: Any) -> str:
         try:
