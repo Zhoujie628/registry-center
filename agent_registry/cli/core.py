@@ -375,7 +375,7 @@ class InteractiveCLI(cmd.Cmd):
         self._context.debug = global_options.get('debug', False)
         
         if global_options.get('version'):
-            print(tf('cli.intro', version='1.0.0'))
+            print(tf('cli.intro', version=CLI_VERSION))
             return 0
         
         if self._context.debug:
@@ -567,7 +567,7 @@ class CLI:
     
     def __init__(self):
         self.name = "agent-registry"
-        self.version = "1.0.0"
+        self.version = CLI_VERSION
     
     @classmethod
     def register(cls, command_class: Type[BaseCommand]) -> Type[BaseCommand]:

@@ -23,7 +23,7 @@ All CLI-related constants should be defined here.
 
 # ========== CLI Version ==========
 
-CLI_VERSION = "1.0.0"
+CLI_VERSION = "1.0.1"
 
 
 # ========== Exit Codes ==========
