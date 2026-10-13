@@ -33,8 +33,8 @@ SPDX-License-Identifier: Apache-2.0
   - **公钥管理**：提供注册中心签名公钥的获取接口。
   - **Agent心跳上报**：Agent周期性上报存活状态，注册中心据此维护健康状态。
   - **Agent健康状态查询**：查询心跳监控的Agent健康状态列表。
-  - **变更订阅管理**：创建、查询、删除注册表变更广播订阅。
-  - **变更对账查询**：按版本号拉取注册表变更事件，用于订阅方补齐数据。
+  - **变更订阅管理**：创建、查询、删除注册中心变更广播订阅。
+  - **变更对账查询**：按版本号拉取注册中心变更事件，用于订阅方补齐数据。
 
 ### 约束与限制
 
@@ -175,7 +175,7 @@ JWKS `/rest/v1/registry-center/keys` 免应用 Token 认证，但不绕过 TLS�
 
 - 请求示例
 
-    ```json
+    ```http
     POST /rest/v1/registry-center/agent-cards HTTP/1.1
     Host: your-domain.com
     Content-Type: application/json
@@ -342,7 +342,7 @@ JWKS `/rest/v1/registry-center/keys` 免应用 Token 认证，但不绕过 TLS�
 
   - 查询所有Agent
 
-    ```json
+    ```http
     GET /rest/v1/registry-center/agent-cards HTTP/1.1
     Host: your-domain.com
     Content-Type: application/json
@@ -350,7 +350,7 @@ JWKS `/rest/v1/registry-center/keys` 免应用 Token 认证，但不绕过 TLS�
 
   - 按名称查询
 
-    ```json
+    ```http
     GET /rest/v1/registry-center/agent-cards?name=RAN%20Energy%20Saving%20Agent HTTP/1.1
     Host: your-domain.com
     Content-Type: application/json
@@ -358,7 +358,7 @@ JWKS `/rest/v1/registry-center/keys` 免应用 Token 认证，但不绕过 TLS�
 
   - 按组织机构精确查询
 
-    ```json
+    ```http
     GET /rest/v1/registry-center/agent-cards?organization=Org HTTP/1.1
     Host: your-domain.com
     Content-Type: application/json
@@ -366,7 +366,7 @@ JWKS `/rest/v1/registry-center/keys` 免应用 Token 认证，但不绕过 TLS�
 
   - 组合条件查询（AND）
 
-    ```json
+    ```http
     GET /rest/v1/registry-center/agent-cards?name=RAN%20Energy%20Saving%20Agent&organization=Org HTTP/1.1
     Host: your-domain.com
     Content-Type: application/json
@@ -374,7 +374,7 @@ JWKS `/rest/v1/registry-center/keys` 免应用 Token 认证，但不绕过 TLS�
 
   - 按层级查询
 
-    ```json
+    ```http
     GET /rest/v1/registry-center/agent-cards?layer=OMC HTTP/1.1
     Host: your-domain.com
     Content-Type: application/json
@@ -860,7 +860,7 @@ JWKS `/rest/v1/registry-center/keys` 免应用 Token 认证，但不绕过 TLS�
 
   - 基本检索
 
-    ```json
+    ```http
     POST /rest/v1/registry-center/agent-cards/semantic-query HTTP/1.1
     Host: your-domain.com
     Content-Type: application/json
@@ -963,13 +963,15 @@ JWKS `/rest/v1/registry-center/keys` 免应用 Token 认证，但不绕过 TLS�
 
 ## 查询带层级的AgentCard
 
+主端口 Token 模式下，三个带层级元数据接口均要求 `nms_oss` 管理员凭据，普通发现/vendor 角色会返回 403；身份认证与 mTLS 分开执行。只返回 published 卡片，是否隐藏不健康卡片取决于健康隐藏开关。下面响应示例中的简化 AgentCard 仅展示返回形态，不可直接用于注册。
+
 - 典型场景
 
     调用方需要按注册层级筛选Agent，并同时获取AgentCard及其注册元数据时，使用该接口。
 
 - 功能描述
 
-    按层级、分页参数查询已发布且健康的Agent。`layer`缺省时不限制层级；提供`layer`时按字符串精确匹配。响应中的`agentCard`内容与注册时保存的AgentCard一致，层级作为同级字段返回。
+    按层级、分页参数查询已发布且符合健康可见性策略的 Agent。`layer`缺省时不限制层级；提供`layer`时按字符串精确匹配。响应中的`agentCard`内容与注册时保存的AgentCard一致，层级作为同级字段返回。
 
 - 调用方法
 
@@ -991,7 +993,7 @@ JWKS `/rest/v1/registry-center/keys` 免应用 Token 认证，但不绕过 TLS�
 
 - 请求示例
 
-    ```json
+    ```http
     POST /rest/v1/registry-center/agent-cards-with-layer HTTP/1.1
     Host: your-domain.com
     Content-Type: application/json
@@ -1050,7 +1052,7 @@ JWKS `/rest/v1/registry-center/keys` 免应用 Token 认证，但不绕过 TLS�
 
 - 功能描述
 
-    按`organization`和`name`精确查询一个已发布且健康的Agent。查询不到时返回404。
+    按`organization`和`name`精确查询一个已发布且符合健康可见性策略的 Agent。查询不到时返回404。
 
 - 调用方法
 
@@ -1066,7 +1068,7 @@ JWKS `/rest/v1/registry-center/keys` 免应用 Token 认证，但不绕过 TLS�
 
 - 请求示例
 
-    ```json
+    ```http
     GET /rest/v1/registry-center/agent-cards-with-layer/Org/RAN%20Energy%20Saving%20Agent HTTP/1.1
     Host: your-domain.com
     Content-Type: application/json
@@ -1096,7 +1098,7 @@ JWKS `/rest/v1/registry-center/keys` 免应用 Token 认证，但不绕过 TLS�
   | 状态码 | 说明 |
   |--------|------|
   | 200 | 查询成功。 |
-  | 404 | Agent不存在、未发布或不健康。 |
+  | 404 | Agent 不存在、未发布或被健康策略隐藏。 |
   | 503 | 服务繁忙。 |
 
 ## 按层级语义检索AgentCard
@@ -1129,7 +1131,7 @@ JWKS `/rest/v1/registry-center/keys` 免应用 Token 认证，但不绕过 TLS�
 
 - 请求示例
 
-    ```json
+    ```http
     POST /rest/v1/registry-center/agent-cards-with-layer/semantic-query HTTP/1.1
     Host: your-domain.com
     Content-Type: application/json
@@ -1254,10 +1256,9 @@ JWKS `/rest/v1/registry-center/keys` 免应用 Token 认证，但不绕过 TLS�
   | 状态码 | 说明           |
   |--------|--------------|
   | 200 | 获取成功。        |
-  | 422 | 获取失败，请求体不是 JSON 对象。 |
   | 429 | 获取失败，超过流控限制。 |
   | 500 | 获取失败，服务内部错误。 |
-  | 503 | 获取失败，模型不可用或返回了不可用的选择结果。 |
+  | 503 | 签名未启用、签名器不可用或证书加载失败。 |
 
 ## Agent心跳上报
 
@@ -1419,7 +1420,7 @@ JWKS `/rest/v1/registry-center/keys` 免应用 Token 认证，但不绕过 TLS�
 
 - 典型场景
 
-    服务运营方需要在注册表数据变化（注册、更新、注销、健康状态变化）时收到实时通知，先通过该接口登记回调地址。
+    服务运营方需要在注册中心数据变化（注册、更新、注销、健康状态变化）时收到实时通知，先通过该接口登记回调地址。
 
 - 功能描述
 

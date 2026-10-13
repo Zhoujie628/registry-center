@@ -64,7 +64,7 @@ The Registry Center security capabilities are as follows:
 The Registry Center provides REST interfaces such as AgentCard registration, modification, and deletion (refer to the [Registry Center User Guide "API Capabilities" section](https://github.com/project-openan/registry-center/blob/main/docs/en/Registry%20Center%20User%20Guide.md#api-capabilities)). These interfaces use the HTTPS protocol by default to ensure communication channel security, with secure TLS protocol versions and cipher suites.<br>
 - TLS protocol versions: TLSv1.3, TLSv1.2<br>
 - Cipher suites: TLS_AES_256_GCM_SHA384,TLS_AES_128_GCM_SHA256,TLS_ECDHE_ECDSA_WITH_AES_256_GCM_SHA384,TLS_ECDHE_ECDSA_WITH_AES_128_GCM_SHA256,TLS_ECDHE_RSA_WITH_AES_256_GCM_SHA384,TLS_ECDHE_RSA_WITH_AES_128_GCM_SHA256,TLS_DHE_RSA_WITH_AES_256_GCM_SHA384,TLS_DHE_DSS_WITH_AES_256_GCM_SHA384,TLS_DHE_RSA_WITH_AES_128_GCM_SHA256,TLS_DHE_DSS_WITH_AES_128_GCM_SHA256<br>
-> **Note**: Protocol versions and cipher suites do not support modification<br>
+> **TLS configuration**: `tls.cipher` in `server.properties` configures pre-TLS-1.3 suites on both listeners through CipherConverter/OpenSSL. TLS 1.3 suites are not controlled by `set_ciphers`; listing them does not configure them. Available suites also depend on OpenSSL and the certificate key type. `tls.version` is advisory only: no runtime consumer changes protocol bounds from that key. Validate an actual TLS handshake after changing policy.
 
 The Registry Center's certificates must be prepared by the user in advance. Certificate requirements:<br>
 - Identity certificate server.cer:
@@ -180,7 +180,7 @@ owner.isolation.enabled=true
 
 # Owner validation mode
 # strict: Validate CN format; verified identity is always required
-# relaxed: Accept other non-empty CN formats from verified credentials
+# relaxed: Skip CN-format validation; anonymous registration can produce ownerless cards
 owner.validation.mode=strict
 owner.identity.mode=certificate
 # Used only in trusted_proxy mode; never use a wildcard
@@ -218,8 +218,7 @@ There are two recording methods:
 1. Default logging to a dedicated log file<br>
 File path: log/audit/audit.log<br>
 Maximum file size: 5 MB. When the limit is reached, existing log files are renamed in descending order by incrementing their numbers by 1, e.g., audit.log.1 -> audit.log.2, audit.log -> audit.log.1<br>
-When the number exceeds 4, the file is aged out and deleted. Smaller numbers correspond to newer logs, and the latest logs are always recorded in audit.log<br>
-Maximum number of files: 5: audit.log, audit.log.1, audit.log.2, audit.log.3, audit.log.4<br>
+`audit_log_backup_count` is the total file count, including the active file. The shipped value `4` keeps audit.log plus audit.log.1–audit.log.3. With the key absent, the code fallback is 5 total files. Lower suffixes are newer; the oldest backup is removed during rotation.<br>
 The file size and maximum file count are configurable. The configuration file path is etc/conf/log_config.conf, with the following configuration items:
 ```properties
 audit_log_max_file_size_mb=5

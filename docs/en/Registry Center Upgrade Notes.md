@@ -214,14 +214,9 @@ The probe uses `python -m agent_registry.healthcheck`, the configured HTTP/HTTPS
 protocol, and the configured CA. It never bypasses certificate verification.
 For mTLS, provide `REGISTRY_HEALTHCHECK_CLIENT_CERT` and
 `REGISTRY_HEALTHCHECK_CLIENT_KEY`; use a dedicated client identity with read access.
-`REGISTRY_HEALTHCHECK_HOST` defaults to `127.0.0.1`; change it to a reachable name
-covered by the server certificate when necessary. The certificates described in
-this guide are issued without a SAN, so an HTTPS probe against the default
-`127.0.0.1` cannot pass verification: an IP literal only matches a certificate
-with an `iPAddress` SAN entry. Set `REGISTRY_HEALTHCHECK_HOST` to a name matching
-the certificate CN (for example `agent-registry`), or issue the probe certificate
-with a SAN covering the probe host. The current probe checks the discovery HTTP
-path, not independent component-level readiness.
+`REGISTRY_HEALTHCHECK_HOST` defaults to `127.0.0.1`. The current serverAuth generator includes SANs for `localhost`, `127.0.0.1` and `::1`, so the loopback probe can verify that generated certificate when its trust anchor is supplied. Explicit `--dns`/`--ip` arguments replace the entire default SAN set: include every required name/address. Custom or legacy certificates must match the probe host via SAN; do not rely on CN or disable verification.
+
+The probe checks `/health`, not AgentCard discovery, and needs no application Bearer. HTTPS/mTLS still requires CA and client identity as configured. `/health` is not a continuous, component-by-component database/model readiness test.
 
 The frontend honors the saved HTTPS setting and keeps same-origin defaults.
 An HTTPS page requires an HTTPS backend address. Unit tests run with `npm test`;
